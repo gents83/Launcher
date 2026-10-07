@@ -1,0 +1,9 @@
+{
+  "DefaultProject": "hurricane",
+  "Projects": [
+    {
+      "Id": "hurricane",
+      "Config": "projects/hurricane.json"
+    }
+  ]
+}

@@ -1,93 +1,170 @@
-# Launcher
+# Project Launcher
 
+A local HTML launcher for project-specific application buttons and optional TeaBox playlists. Each project has its own JSON config. Choose a project to see its configured actions, then click a button to start it.
 
+## Start and stop
 
-## Getting started
+Double-click `start-launcher.cmd`. It opens the launcher in your default browser and keeps a PowerShell console open for the local server. Press **Ctrl+C** in that console to stop the server. Keep the console open while using the page. The helper picks an available port by default; pass `-Port 61667` to bind a specific loopback port.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+Do not open `index.html` directly. The page needs the local helper to read project configuration and start configured programs. The helper listens on `127.0.0.1` only and uses no external packages.
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+To preview the UI without starting any configured program or playlist, use test mode:
 
-## Add your files
-
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin https://gitlab-ncsa.ubisoft.org/mgentile/launcher.git
-git branch -M main
-git push -uf origin main
+```bat
+start-launcher.cmd -TestMode
 ```
 
-## Integrate with your tools
+Clicking an action in test mode reports what would be started and shows **TEST MODE**. In normal mode, custom application buttons report success as soon as their process starts. TeaBox playlist buttons wait for `TeaBox.com` to exit and report its exit code. Exit code 0 produces a green **SUCCESS** dialog; a nonzero exit code or launch error produces a red **FAILURE** dialog. **Close** dismisses the dialog without closing the launcher or stopping its local server.
 
-* [Set up project integrations](https://gitlab-ncsa.ubisoft.org/mgentile/launcher/-/settings/integrations)
+## Build a portable output folder
 
-## Collaborate with your team
+Run `build.bat` from the project folder or double-click it. On first use, the build helper installs the PS2EXE module for the current user from PowerShell Gallery; this is a build-time dependency only.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+The build creates `output\Launcher.exe` and stages the files it needs alongside it: `launcher.ps1`, `launcher.core.ps1`, `index.html`, `projects.json`, the project config files referenced by the index, `start-launcher.cmd` as a script-based fallback, and this README. The `output` folder preserves the config directory layout. Keep the folder together when moving or distributing the launcher; the EXE is not a single-file package.
 
-## Test and Deploy
+Double-click `output\Launcher.exe` to start the app. Keep its console open while using the browser page and press **Ctrl+C** there to stop the local server. The output bundle does not include configured Unreal, TeaBox, or project files; those remain external and must be available at the paths in the project JSON files. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test-build.ps1` to build and smoke-test the packaged EXE in test mode.
 
-Use the built-in continuous integration in GitLab.
+## 1. Fill in `projects.json`
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
+`projects.json` is the master index. It selects the default project and points to each project's JSON file. `Config` paths are relative to the folder containing `projects.json`:
 
-***
+```json
+{
+  "DefaultProject": "hurricane",
+  "Theme": "dark",
+  "Projects": [
+    {
+      "Id": "hurricane",
+      "Config": "projects/hurricane.json"
+    },
+    {
+      "Id": "sandstorm",
+      "Config": "projects/sandstorm.json"
+    }
+  ]
+}
+```
 
-# Editing this README
+Master fields:
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+- `DefaultProject` (required): the `Id` of the project selected when the page opens.
+- `Projects` (required, nonempty array): the projects available in the selector.
+- `Projects[].Id` (required): a stable, unique identifier. Use the same value for `DefaultProject` when selecting it as the default.
+- `Projects[].Config` (required): path to that project's JSON file, relative to `projects.json`.
+- `Theme` (optional): initial launcher theme, either `"dark"` (default) or `"light"`. The theme button switches between modes and remembers the choice in that browser; its saved choice takes precedence over this default.
 
-## Suggestions for a good README
+### Edit theme colors
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+`theme.json` sits beside `projects.json` and defines the dark and light palettes. Edit known token values to customize the page; values may be CSS colors or paint values such as gradients and shadows. Omitted tokens keep the built-in CSS value.
 
-## Name
-Choose a self-explaining name for your project.
+```json
+{
+  "dark": {
+    "ink": "#f3f4f1",
+    "canvas": "#090b10",
+    "xbox-green": "#9bf00b"
+  },
+  "light": {
+    "ink": "#1d252b",
+    "canvas": "#f4f6f8",
+    "xbox-green": "#107c10"
+  }
+}
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Token names correspond to the CSS variables in `index.html` without the leading `--`. Supported names are `ink`, `muted`, `canvas`, `panel`, `tile`, `rule`, `xbox-green`, `xbox-glow`, `error`, `success`, `page-background`, `backdrop-scrim`, `brand-ink`, `badge-background`, `workspace-background`, `workspace-shadow`, `field-background`, `tile-background`, `tile-shadow`, `tile-hover-background`, `tile-hover-border`, `tile-hover-shadow`, `art-border`, `index-border`, `index-background`, `empty-background`, `empty-border`, `dialog-background`, `dialog-shadow`, `dialog-scrim`, `close-background`, and `footer-ink`. Each palette must include at least one known token. If `theme.json` is missing, malformed, or contains an unknown token, the launcher keeps its built-in palettes. Reload the page after editing the file.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+To add a project, create its per-project JSON file, then add an `{ "Id", "Config" }` entry to `Projects`. Use a different ID for each project. If a project JSON is missing or invalid, the launcher shows an error for that project while leaving the other projects available.
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+## 2. Fill in each project JSON
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+The project JSON contains that project's name and root, custom application buttons, optional TeaBox playlist discovery, and artwork. Filesystem paths in this file are relative to the directory containing this project JSON; artwork fields may also use absolute HTTP(S) URLs.
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+Example `projects/hurricane.json`:
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```json
+{
+  "Name": "Hurricane",
+  "Root": "../../project/Hurricane",
+  "BackgroundImage": "../../project/Hurricane/Data/Images/Hurricane.png",
+  "Buttons": [
+    {
+      "Id": "open-editor",
+      "Label": "Open Editor",
+      "Category": "Development",
+      "Executable": "{ProjectRoot}/Tools/Editor.exe",
+      "Icon": "../../project/Hurricane/Data/Images/Editor.png",
+      "Arguments": [
+        "--project",
+        "{ProjectRoot}/Hurricane.uproject"
+      ],
+      "WorkingDirectory": "{ProjectRoot}"
+    }
+  ],
+  "TeaBox": {
+    "Executable": "../../project/Hurricane/Tools/Teabox/TeaBox.com",
+    "PlaylistDirectory": "../../project/Hurricane/Tools/Teabox/Playlists/Hurricane",
+    "PlaylistPrefix": "Shared- "
+  },
+  "PlaylistImages": {
+    "0 - Setup": "../../project/Hurricane/Data/Images/setup.png"
+  }
+}
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+A hosted image can be used in any artwork field, for example `"BackgroundImage": "https://example.com/background.png?width=1200"`. Query strings are preserved.
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+Required project fields:
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+- `Name` (string): project name shown in the selector.
+- `Root` (path): project or workspace root. It is also the default working directory for application buttons.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+Optional project fields:
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+- `Buttons` (array): application buttons shown in the dashboard. Omit it or use `[]` if there are no custom buttons.
+- `TeaBox` (object): enables automatic discovery of TeaBox playlists. Omit it for a custom-button-only project.
+- `BackgroundImage` (path or HTTP(S) URL): image used as the project's background.
+- `PlaylistImages` (object): maps exact playlist basenames, without `.playlist`, to tile-image paths or HTTP(S) URLs. This is a project-level field beside `Buttons` and `TeaBox`.
 
-## License
-For open source projects, say how it is licensed.
+### Application button fields
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+Each object in `Buttons` has:
+
+- `Id` (required string): unique within that project's button list and used to identify the action.
+- `Label` (required string): text shown on the button.
+- `Category` (optional string): section title for the button. Buttons with the same category are grouped together; missing or blank values use `Applications`.
+- `Executable` (required path): the local executable to start.
+- `Arguments` (optional array of strings): command-line arguments in order. Use `[]` or omit this field for no arguments.
+- `WorkingDirectory` (optional path): directory to use when starting the executable. If omitted, `Root` is used.
+- `Icon` (optional path or HTTP(S) URL): image shown on that application tile instead of the `APP` fallback. Set one `Icon` value inside each `Buttons` entry that should have artwork.
+
+`Executable` and `WorkingDirectory` may be absolute paths. Relative executable, working-directory, and local artwork paths resolve from the project JSON. Artwork URLs must be absolute HTTP(S) URLs. The launcher starts configured executables directly, without running arbitrary shell commands. Application buttons return as soon as the process starts; they do not wait for it to exit.
+
+### Path placeholders
+
+In an application's `Executable`, each `Arguments` entry, and `WorkingDirectory`, you may use:
+
+- `{ProjectRoot}` — the resolved `Root` path.
+- `{ProjectConfigDirectory}` — the directory containing the per-project JSON.
+
+For example, `"{ProjectRoot}/Tools/Editor.exe"` uses the project's root even if the workspace is moved. Placeholders are replaced before the program starts. Arguments are an array so spaces and quotes can be passed as part of an individual argument.
+
+### Optional TeaBox settings
+
+When `TeaBox` is present, all of these fields are required:
+
+- `Executable`: path to that project's `TeaBox.com`.
+- `PlaylistDirectory`: directory containing `.playlist` files.
+- `PlaylistPrefix`: text prepended to a playlist basename for TeaBox's `RunPlaylist -playlist` value. It may be an empty string.
+
+The launcher finds `.playlist` files in that directory and creates one button per file. The filename without `.playlist` is the button label. For example, `0 - Setup.playlist` with prefix `Shared- ` runs the TeaBox playlist `Shared- 0 - Setup`. Application buttons and discovered playlist buttons can coexist in the same project. Application buttons appear in category sections in the order each category first appears in `Buttons`; TeaBox playlists appear together in a separate **TeaBox playlists** section.
+
+`PlaylistImages` is outside the `TeaBox` object. Its keys must exactly match playlist basenames, such as `"0 - Setup"`. Each configured image replaces the playlist number on that tile; if the image is missing, the number remains.
+
+## Artwork and path rules
+
+Local project-file paths—including `Root`, `BackgroundImage`, `PlaylistImages` values, `TeaBox` paths, `Buttons[].Executable`, `Buttons[].WorkingDirectory`, and `Buttons[].Icon`—resolve relative to that project's JSON. The master `Config` path alone resolves relative to `projects.json`. Relative paths are recommended so the workspace can move together; absolute paths are also accepted. Image URLs must be absolute HTTP(S) URLs and are used as-is, including their query strings.
+
+BMP, PNG, JPG/JPEG, and WebP files are supported for local backgrounds, playlist tiles, and application icons. Local images are served only from explicitly configured paths through the launcher. HTTP(S) artwork URLs load directly in the browser; the launcher does not proxy or cache them. Remote image hosts must be reachable from the browser, and inaccessible or non-image URLs use the existing background or tile fallback.
+
+Project files are trusted local configuration. Add a button only when you intend its executable to run after a user clicks it. The browser submits only project and action IDs; it cannot supply executable paths or arguments, and the launcher never starts an action when the page loads.

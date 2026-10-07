@@ -1,0 +1,23 @@
+{
+  "Name": "Hurricane",
+  "Root": "../../project/Hurricane",
+  "BackgroundImage": "../../project/Hurricane/Data/Images/Hurricane.png",
+  "Buttons": [
+    {
+      "Id": "open-editor",
+      "Label": "Open Editor",
+      "Icon": "https://logosandtypes.com/wp-content/uploads/2020/08/Unreal-Engine.png",
+      "Executable": "../../Engine/Binaries/Win64/UnrealEditor.exe",
+      "Arguments": ["--project", "../../project/Hurricane/Hurricane.uproject"],
+      "WorkingDirectory": "{ProjectRoot}"
+    }
+  ],
+  "TeaBox": {
+    "Executable": "../../project/Hurricane/Tools/Teabox/TeaBox.com",
+    "PlaylistDirectory": "../../project/Hurricane/Tools/Teabox/Playlists/Hurricane",
+    "PlaylistPrefix": "Shared- "
+  },
+  "PlaylistImages": {
+    "1 - Get and Launch Editor": "../../project/Hurricane/Data/Images/HurricaneThumbnail.png"
+  }
+}
