@@ -1,0 +1,67 @@
+<Window x:Class="Launcher.App.Views.ConfigSetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Set up Project Launcher"
+        Width="700"
+        Height="260"
+        ResizeMode="NoResize"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock FontSize="18" FontWeight="SemiBold" Text="Choose the master projects.json file" />
+            <TextBlock Margin="0,6,0,0"
+                       Text="Select the Perforce-synced launcher index. The launcher will remember this location for your account."
+                       TextWrapping="Wrap" />
+        </StackPanel>
+
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBox x:Name="ConfigIndexPathTextBox"
+                     MinHeight="30"
+                     Padding="6,4"
+                     VerticalContentAlignment="Center"
+                     AutomationProperties.Name="Master projects.json path"
+                     AutomationProperties.AutomationId="ConfigIndexPath" />
+            <Button Grid.Column="1"
+                    AutomationProperties.AutomationId="BrowseButton"
+                    MinWidth="90"
+                    Margin="8,0,0,0"
+                    Padding="12,5"
+                    Click="Browse_Click"
+                    Content="Browse..." />
+        </Grid>
+
+        <TextBlock x:Name="ValidationErrorTextBlock"
+                   Grid.Row="2"
+                   Margin="0,8,0,0"
+                   Foreground="Firebrick"
+                   TextWrapping="Wrap"
+                   Visibility="Collapsed" />
+
+        <StackPanel Grid.Row="4" HorizontalAlignment="Right" Orientation="Horizontal">
+            <Button AutomationProperties.AutomationId="CancelButton"
+                    MinWidth="90"
+                    Margin="0,0,8,0"
+                    Padding="12,6"
+                    IsCancel="True"
+                    Content="Cancel" />
+            <Button AutomationProperties.AutomationId="UseConfigButton"
+                    MinWidth="120"
+                    Padding="12,6"
+                    IsDefault="True"
+                    Click="Continue_Click"
+                    Content="Use this config" />
+        </StackPanel>
+    </Grid>
+</Window>
