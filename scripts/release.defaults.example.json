@@ -1,0 +1,11 @@
+{
+  "UpdateSource": {
+    "Provider": "FileShare",
+    "FeedBase": "",
+    "Channel": "stable"
+  },
+  "Publish": {
+    "Provider": "FileShare",
+    "Destination": ""
+  }
+}

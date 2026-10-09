@@ -1,28 +1,89 @@
 # Project Launcher
 
-A local HTML launcher for project-specific application buttons and optional TeaBox playlists. Each project has its own JSON config. Choose a project to see its configured actions, then click a button to start it.
+A .NET 10 WPF desktop launcher with an embedded WebView2 dashboard for project-specific application buttons and optional TeaBox playlists. Project configuration stays external in the Perforce-synced config tree; the published app package does not contain project or theme JSON files.
 
-## Start and stop
+## Requirements and entry point
 
-Double-click `start-launcher.cmd`. It opens the launcher in your default browser and keeps a PowerShell console open for the local server. Press **Ctrl+C** in that console to stop the server. Keep the console open while using the page. The helper picks an available port by default; pass `-Port 61667` to bind a specific loopback port.
+The app runs on Windows x64 and requires the Microsoft Edge WebView2 Evergreen Runtime. Building from source requires the .NET 10 SDK. Published app versions are self-contained for `win-x64`; WebView2 remains a machine prerequisite.
 
-Do not open `index.html` directly. The page needs the local helper to read project configuration and start configured programs. The helper listens on `127.0.0.1` only and uses no external packages.
+The supported entry point is **`Launcher.Bootstrapper.exe`** in the deployment's synchronized Perforce `Launcher` folder. The bootstrapper reads the adjacent `launcher.json`, checks the configured unsigned NAS/Artifactory feed, and starts the newest healthy app version from `%LOCALAPPDATA%\ProjectLauncher\deployments\<DeploymentId>`. That per-user cache is used for safe staging and rollback; the Perforce folder is not modified. Do not run a versioned `Launcher.App.exe` directly, because that bypasses update checks.
 
-To preview the UI without starting any configured program or playlist, use test mode:
+After deployment, the Perforce `Launcher` folder contains the complete `perforce-launcher/` payload: `Launcher.Bootstrapper.exe`, `launcher.json`, the unsigned schema-v2 `seed-feed`, the master `projects.json`, only its referenced child project JSON files, and optional `theme.json` beside the index. The generated bundle does not include project executables, artwork, workspace data, or other assets referenced by those JSON files; ensure they are available at their configured paths. `launcher.json` points to the master index using a relative path. The app reads the Perforce-synced files at startup; after syncing config changes, start the launcher again or use **Refresh** to reload them. The launcher never runs `p4 sync`.
+
+NAS/Artifactory updates contain app binaries only. Project/theme JSON remains Perforce-owned and is never replaced by an app update. NAS access uses the user's Windows identity. For Artifactory, the feed uses HTTPS and the user's read token must already be in Windows Credential Manager; never put tokens in Perforce. If the update feed is offline, the unsigned Perforce seed or last healthy cached version is used.
+
+## Test mode
+
+To inspect the published UI without starting configured applications or playlists, pass a temporary fixture index:
 
 ```bat
-start-launcher.cmd -TestMode
+output\app\Launcher.App.exe --test-mode --config-index "C:\path\to\temporary\projects.json"
 ```
 
-Clicking an action in test mode reports what would be started and shows **TEST MODE**. In normal mode, custom application buttons report success as soon as their process starts. TeaBox playlist buttons wait for `TeaBox.com` to exit and report its exit code. Exit code 0 produces a green **SUCCESS** dialog; a nonzero exit code or launch error produces a red **FAILURE** dialog. **Close** dismisses the dialog without closing the launcher or stopping its local server.
+Test mode displays **TEST MODE** results for clicked actions and never starts them. Use a temporary fixture config for smoke checks, not a real project index.
 
-## Build a portable output folder
+## Build and package
 
-Run `build.bat` from the project folder or double-click it. On first use, the build helper installs the PS2EXE module for the current user from PowerShell Gallery; this is a build-time dependency only.
+Run `dotnet test Launcher.sln` to execute the .NET tests.
 
-The build creates `output\Launcher.exe` and stages the files it needs alongside it: `launcher.ps1`, `launcher.core.ps1`, `index.html`, `projects.json`, the project config files referenced by the index, `start-launcher.cmd` as a script-based fallback, and this README. The `output` folder preserves the config directory layout. Keep the folder together when moving or distributing the launcher; the EXE is not a single-file package.
+### App-only developer build
 
-Double-click `output\Launcher.exe` to start the app. Keep its console open while using the browser page and press **Ctrl+C** there to stop the local server. The output bundle does not include configured Unreal, TeaBox, or project files; those remain external and must be available at the paths in the project JSON files. Run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test-build.ps1` to build and smoke-test the packaged EXE in test mode.
+`build.bat` is a thin wrapper around `build.ps1`. It publishes only `Launcher.App` to `output\app`; it does not create an update feed.
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Version 1.0.1
+```
+
+`-Version` defaults to `1.0.0`. A stable `major.minor.patch` version maps to `major.minor.patch.0` (for example, `1.0.1` becomes `1.0.1.0`). The package is self-contained for `win-x64`, excludes project configuration and Perforce files, and requires WebView2 Evergreen Runtime. Check it with `powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\test-csharp-publish.ps1 -OutputPath .\output\app`.
+
+### Perforce launcher and update-feed bundles
+
+Release bundle generation must run on Windows for WPF `win-x64` publishing and handle-bound configuration validation.
+
+Set one `major.minor.patch` value in tracked [`version.txt`](version.txt) (currently `1.0.0`), bump it for the next release, then run `build-release.bat`. One invocation creates a folder to merge into the Perforce Launcher folder and an unsigned schema-v2 app-update feed. `-Version` may be passed to override the file for a one-off build. Unless `-OutputDirectory` is supplied, output goes to `output\release-<version>`:
+
+```text
+output/release-1.2.3/
+  perforce-launcher/  # submit this complete payload into the Perforce Launcher folder
+    Launcher.Bootstrapper.exe
+    ...bootstrapper runtime files...
+    launcher.json
+    seed-feed/stable/latest.json
+    seed-feed/stable/packages/Launcher-1.2.3-win-x64.zip
+    projects.json     # master config index
+    projects/
+      <referenced-project>.json
+    theme.json        # optional; beside projects.json
+  update-bundle/      # copy separately to NAS or upload to Artifactory
+    stable/latest.json
+    stable/packages/Launcher-1.2.3-win-x64.zip
+```
+
+Both feeds contain only `stable/latest.json` and the immutable `stable/packages/Launcher-<version>-win-x64.zip`; no `.sig` file or `.test-key-only` marker is generated. The schema-v2 `latest.json` contains these fields:
+
+- `SchemaVersion`: integer `2`.
+- `Channel`: feed channel, normally `stable`.
+- `Version`: release version.
+- `RuntimeIdentifier`: `win-x64`.
+- `PackagePath`: package path relative to the channel directory, for example `packages/Launcher-1.2.3-win-x64.zip`.
+- `PackageBytes`: package size in bytes.
+- `PackageSha256`: hexadecimal SHA-256 of the package.
+
+**Trust boundary:** SHA-256 verifies package integrity against the manifest; it does not authenticate the publisher. The trust model relies on HTTPS transport for Artifactory, Windows identity authentication for NAS, feed write ACLs, and Perforce access control.
+
+#### Perforce deployment and updates
+
+For a fresh deployment, place and submit the complete generated `perforce-launcher/` folder in the depot's `Launcher` location through the normal Perforce workflow. Separately ensure project executables, artwork, workspace data, and other assets referenced by the included JSON are available at their configured paths; those assets remain outside the release bundle. Copy the contents of `update-bundle/` separately to the NAS feed root or Artifactory repository.
+
+For an existing deployment, compare the generated `perforce-launcher/` payload with the current depot contents and review every generated descriptor/config diff. Preserve locally customized `launcher.json`—especially `DeploymentId`, `ConfigIndex`, and `UpdateSource`—along with `projects.json`, child project JSON, and `theme.json` unless intentionally replacing them. Submit approved descriptor, config, and runtime changes through the usual Perforce review/submit workflow; users continue to receive config changes through normal Perforce sync. App updates remain automatic through the unsigned feed and do not replace Perforce configuration.
+
+The generated `launcher.json` selects the feed and the relative path to `projects.json`. Set `-DeploymentId` to the stable ID for that deployment; it scopes that user's cache. Set `-ConfigIndex` only when the master index is not named `projects.json` at the Perforce folder root.
+
+`UpdateFeedBase` is the **repository/share root before the channel folder**. For NAS, use a UNC root such as `\\server\share\launcher-feed`; the updater reads `\\server\share\launcher-feed\stable\latest.json`. For Artifactory, use the HTTPS generic-repository base URL without `/stable`, credentials, query, or fragment. The selected `Channel` is appended in either case. NAS access uses the user's Windows identity. Artifactory read tokens must already be in Windows Credential Manager; release maintainers need write/deploy permission.
+
+For release configuration, copy `scripts/release.defaults.example.json` to the Git-ignored `scripts/release.defaults.json` and configure its `UpdateSource` and optional `Publish` sections. The example exposes only those two sections. `UpdateSource` is required to generate the deployment's `launcher.json`; configuring `Publish` does not publish by itself. With local defaults configured, `build-release.bat` reads `version.txt` and creates the bundles without publishing. `-DeploymentId` defaults to `project-launcher`; use a distinct, stable ID for each separately configured deployment.
+
+Publishing is opt-in. Add `-Publish` to publish only `update-bundle` to the configured NAS/Artifactory target, or supply both `-Provider` and `-Destination` to override it. The publisher writes the versioned package first and `stable/latest.json` last; a rejected package upload stops publication before the manifest is sent. The NAS FileShare publisher rejects an existing package path. Artifactory's generic-repository publisher uses HTTP PUT and cannot independently guarantee create-only package writes ([Deploy Artifact API](https://docs.jfrog.com/artifactory/reference/deployArtifact)). Before publishing to production Artifactory, configure and verify repository permissions: grant release maintainers `Deploy/Cache` on `stable/packages/**` but withhold `Delete/Overwrite` there, and use a separate narrowly scoped permission target for `stable/latest.json` that allows overwrite. Ensure no broader target grants those maintainers overwrite access to package paths. See [JFrog permission documentation](https://docs.jfrog.com/administration/docs/permissions). This is a deployment prerequisite; it does not assert that any live repository is configured. The batch tool never submits files to Perforce; use the deployment workflow above for Perforce changes.
 
 ## 1. Fill in `projects.json`
 
@@ -72,7 +133,7 @@ Master fields:
 }
 ```
 
-Token names correspond to the CSS variables in `index.html` without the leading `--`. Supported names are `ink`, `muted`, `canvas`, `panel`, `tile`, `rule`, `xbox-green`, `xbox-glow`, `error`, `success`, `page-background`, `backdrop-scrim`, `brand-ink`, `badge-background`, `workspace-background`, `workspace-shadow`, `field-background`, `tile-background`, `tile-shadow`, `tile-hover-background`, `tile-hover-border`, `tile-hover-shadow`, `art-border`, `index-border`, `index-background`, `empty-background`, `empty-border`, `dialog-background`, `dialog-shadow`, `dialog-scrim`, `close-background`, and `footer-ink`. Each palette must include at least one known token. If `theme.json` is missing, malformed, or contains an unknown token, the launcher keeps its built-in palettes. Reload the page after editing the file.
+Token names correspond to the CSS variables in `src/Launcher.App/wwwroot/index.html` without the leading `--`. Supported names are `ink`, `muted`, `canvas`, `panel`, `tile`, `rule`, `xbox-green`, `xbox-glow`, `error`, `success`, `page-background`, `backdrop-scrim`, `brand-ink`, `badge-background`, `workspace-background`, `workspace-shadow`, `field-background`, `tile-background`, `tile-shadow`, `tile-hover-background`, `tile-hover-border`, `tile-hover-shadow`, `art-border`, `index-border`, `index-background`, `empty-background`, `empty-border`, `dialog-background`, `dialog-shadow`, `dialog-scrim`, `close-background`, and `footer-ink`. Each palette must include at least one known token. If `theme.json` is missing, malformed, or contains an unknown token, the launcher keeps its built-in palettes. Click **Refresh** after editing the file.
 
 To add a project, create its per-project JSON file, then add an `{ "Id", "Config" }` entry to `Projects`. Use a different ID for each project. If a project JSON is missing or invalid, the launcher shows an error for that project while leaving the other projects available.
 

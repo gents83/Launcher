@@ -2,3 +2,10 @@
 superpowers/
 /output/
 /tasks/
+/scripts/release.defaults.json
+
+**/bin/
+**/obj/
+
+**/TestResults/
+.vs/
