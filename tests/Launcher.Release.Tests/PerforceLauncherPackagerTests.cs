@@ -36,6 +36,7 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
         """);
 
     private readonly string _bootstrapperPublish;
+    private readonly string _shimPublish;
     private readonly string _seedFeed;
     private readonly string _configSource;
     private readonly UpdateSourceSettings _updateSource;
@@ -43,6 +44,7 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
     public PerforceLauncherPackagerTests()
     {
         _bootstrapperPublish = Path.Combine(_root, "bootstrapper-publish");
+        _shimPublish = Path.Combine(_root, "shim-publish");
         _seedFeed = Path.Combine(_root, "seed-feed");
         _configSource = Path.Combine(_root, "config-source");
         _updateSource = new UpdateSourceSettings(
@@ -50,9 +52,15 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
             Path.Combine(_root, "nas-feed"),
             "stable");
         Directory.CreateDirectory(Path.Combine(_bootstrapperPublish, "runtimes", "win-x64"));
+        Directory.CreateDirectory(Path.Combine(_bootstrapperPublish, "fr"));
+        Directory.CreateDirectory(_shimPublish);
         File.WriteAllText(Path.Combine(_bootstrapperPublish, "Launcher.Bootstrapper.exe"), "bootstrapper app");
         File.WriteAllText(Path.Combine(_bootstrapperPublish, "Launcher.Bootstrapper.dll"), "bootstrapper assembly");
+        File.WriteAllText(Path.Combine(_bootstrapperPublish, "bootstrapper.pdb"), "symbols");
         File.WriteAllText(Path.Combine(_bootstrapperPublish, "runtimes", "win-x64", "runtime.dll"), "runtime");
+        File.WriteAllText(Path.Combine(_bootstrapperPublish, "fr", "Launcher.resources.dll"), "localized");
+        File.WriteAllText(Path.Combine(_shimPublish, "LAUNCHER.exe"), "launcher shim");
+        File.WriteAllText(Path.Combine(_shimPublish, "shim-sidecar.dll"), "not included");
         Directory.CreateDirectory(Path.Combine(_configSource, "projects", "nested"));
         File.WriteAllBytes(Path.Combine(_configSource, "projects.json"), MasterIndexBytes);
         File.WriteAllBytes(Path.Combine(_configSource, "projects", "alpha.json"), AlphaConfigBytes);
@@ -69,6 +77,7 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
         var outputDirectory = Path.Combine(_root, "perforce-launcher");
 
         await new PerforceLauncherPackager().CreateAsync(
+            _shimPublish,
             _bootstrapperPublish,
             _seedFeed,
             _configSource,
@@ -77,8 +86,24 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
             "projects.json",
             _updateSource);
 
-        Assert.Equal("bootstrapper app", await File.ReadAllTextAsync(Path.Combine(outputDirectory, "Launcher.Bootstrapper.exe")));
-        Assert.Equal("runtime", await File.ReadAllTextAsync(Path.Combine(outputDirectory, "runtimes", "win-x64", "runtime.dll")));
+        Assert.Equal("launcher shim", await File.ReadAllTextAsync(Path.Combine(outputDirectory, "LAUNCHER.exe")));
+        Assert.False(File.Exists(Path.Combine(outputDirectory, "shim-sidecar.dll")));
+        Assert.False(File.Exists(Path.Combine(outputDirectory, "Launcher.Bootstrapper.exe")));
+        Assert.False(File.Exists(Path.Combine(outputDirectory, "Launcher.Bootstrapper.dll")));
+        Assert.False(Directory.Exists(Path.Combine(outputDirectory, "runtimes")));
+        Assert.Equal(
+            "bootstrapper app",
+            await File.ReadAllTextAsync(Path.Combine(outputDirectory, "deps", "Launcher.Bootstrapper.exe")));
+        Assert.Equal(
+            "bootstrapper assembly",
+            await File.ReadAllTextAsync(Path.Combine(outputDirectory, "deps", "Launcher.Bootstrapper.dll")));
+        Assert.Equal(
+            "runtime",
+            await File.ReadAllTextAsync(Path.Combine(outputDirectory, "deps", "runtimes", "win-x64", "runtime.dll")));
+        Assert.Equal(
+            "localized",
+            await File.ReadAllTextAsync(Path.Combine(outputDirectory, "deps", "fr", "Launcher.resources.dll")));
+        Assert.False(File.Exists(Path.Combine(outputDirectory, "deps", "bootstrapper.pdb")));
         Assert.True(File.Exists(Path.Combine(outputDirectory, "seed-feed", "stable", "latest.json")));
         Assert.False(File.Exists(Path.Combine(outputDirectory, "seed-feed", "stable", "latest.sig")));
         Assert.True(File.Exists(Path.Combine(outputDirectory, "seed-feed", "stable", "packages", "Launcher-1.2.3-win-x64.zip")));
@@ -100,12 +125,35 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_rejects_a_missing_shim_entry_point_without_promoting_output()
+    {
+        File.Delete(Path.Combine(_shimPublish, "LAUNCHER.exe"));
+        var outputDirectory = Path.Combine(_root, "missing-shim-output");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateBundleAsync(outputDirectory));
+
+        Assert.False(Directory.Exists(outputDirectory));
+    }
+
+    [Fact]
+    public async Task CreateAsync_rejects_a_missing_bootstrapper_entry_point_without_promoting_output()
+    {
+        File.Delete(Path.Combine(_bootstrapperPublish, "Launcher.Bootstrapper.exe"));
+        var outputDirectory = Path.Combine(_root, "missing-bootstrapper-output");
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => CreateBundleAsync(outputDirectory));
+
+        Assert.False(Directory.Exists(outputDirectory));
+    }
+
+    [Fact]
     public async Task Perforce_bundle_command_creates_the_configured_launcher_payload()
     {
         var outputDirectory = Path.Combine(_root, "perforce-launcher-from-cli");
         var exitCode = await ReleaseCli.RunAsync(
         [
             "perforce-bundle",
+            "--shim-publish-directory", _shimPublish,
             "--bootstrapper-publish-directory", _bootstrapperPublish,
             "--feed-directory", _seedFeed,
             "--config-source-directory", _configSource,
@@ -118,7 +166,8 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
         ]);
 
         Assert.Equal(0, exitCode);
-        Assert.True(File.Exists(Path.Combine(outputDirectory, "Launcher.Bootstrapper.exe")));
+        Assert.True(File.Exists(Path.Combine(outputDirectory, "LAUNCHER.exe")));
+        Assert.False(File.Exists(Path.Combine(outputDirectory, "Launcher.Bootstrapper.exe")));
         Assert.True(File.Exists(Path.Combine(outputDirectory, "launcher.json")));
         Assert.Equal(MasterIndexBytes, await File.ReadAllBytesAsync(Path.Combine(outputDirectory, "projects.json")));
         Assert.Equal(AlphaConfigBytes, await File.ReadAllBytesAsync(Path.Combine(outputDirectory, "projects", "alpha.json")));
@@ -136,6 +185,7 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
         var outputDirectory = Path.Combine(_root, "rejected-perforce-launcher");
 
         await Assert.ThrowsAsync<ArgumentException>(() => new PerforceLauncherPackager().CreateAsync(
+            _shimPublish,
             _bootstrapperPublish,
             _seedFeed,
             _configSource,
@@ -312,6 +362,7 @@ public sealed class PerforceLauncherPackagerTests : IDisposable
     }
 
     private Task<string> CreateBundleAsync(string outputDirectory) => new PerforceLauncherPackager().CreateAsync(
+        _shimPublish,
         _bootstrapperPublish,
         _seedFeed,
         _configSource,

@@ -17,6 +17,7 @@ public sealed class PerforceLauncherPackager
     };
 
     public Task<string> CreateAsync(
+        string shimPublishDirectory,
         string bootstrapperPublishDirectory,
         string seedFeedDirectory,
         string configSourceDirectory,
@@ -26,6 +27,7 @@ public sealed class PerforceLauncherPackager
         UpdateSourceSettings updateSource,
         CancellationToken cancellationToken = default) =>
         CreateAsyncCoreAsync(
+            shimPublishDirectory,
             bootstrapperPublishDirectory,
             seedFeedDirectory,
             configSourceDirectory,
@@ -36,6 +38,7 @@ public sealed class PerforceLauncherPackager
             cancellationToken);
 
     private async Task<string> CreateAsyncCoreAsync(
+        string shimPublishDirectory,
         string bootstrapperPublishDirectory,
         string seedFeedDirectory,
         string configSourceDirectory,
@@ -58,6 +61,7 @@ public sealed class PerforceLauncherPackager
             updateSource.Channel)
             ?? throw new ArgumentException("An update source is required.", nameof(updateSource));
 
+        var shimRoot = Path.GetFullPath(shimPublishDirectory);
         var bootstrapperRoot = Path.GetFullPath(bootstrapperPublishDirectory);
         var seedFeedRoot = Path.GetFullPath(seedFeedDirectory);
         var outputRoot = Path.GetFullPath(outputDirectory);
@@ -66,10 +70,20 @@ public sealed class PerforceLauncherPackager
             throw new IOException("The Perforce launcher output directory must not already exist.");
         }
 
+        var shimFiles = ReleasePayloadValidator.EnumerateFiles(shimRoot);
+        ReleasePayloadValidator.ValidateFiles(shimFiles);
+        var shimExecutable = shimFiles.FirstOrDefault(static file =>
+            string.Equals(file.RelativePath, "LAUNCHER.exe", StringComparison.OrdinalIgnoreCase));
+        if (shimExecutable is null)
+        {
+            throw new InvalidDataException("The shim publish directory does not contain LAUNCHER.exe.");
+        }
+
         var bootstrapperFiles = ReleasePayloadValidator.EnumerateFiles(bootstrapperRoot);
         ReleasePayloadValidator.ValidateFiles(bootstrapperFiles);
-        if (!bootstrapperFiles.Any(static file =>
-                string.Equals(file.RelativePath, "Launcher.Bootstrapper.exe", StringComparison.OrdinalIgnoreCase)))
+        var bootstrapperExecutable = bootstrapperFiles.FirstOrDefault(static file =>
+            string.Equals(file.RelativePath, "Launcher.Bootstrapper.exe", StringComparison.OrdinalIgnoreCase));
+        if (bootstrapperExecutable is null)
         {
             throw new InvalidDataException("The bootstrapper publish directory does not contain Launcher.Bootstrapper.exe.");
         }
@@ -82,7 +96,12 @@ public sealed class PerforceLauncherPackager
         Directory.CreateDirectory(stagingRoot);
         try
         {
-            CopyBootstrapperPayload(bootstrapperRoot, stagingRoot, bootstrapperFiles, cancellationToken);
+            CopyBootstrapperPayload(
+                bootstrapperRoot,
+                Path.Combine(stagingRoot, "deps"),
+                bootstrapperFiles,
+                cancellationToken);
+            File.Copy(shimExecutable.FullPath, Path.Combine(stagingRoot, "LAUNCHER.exe"), overwrite: false);
             CopySeedFeed(seedFeed, Path.Combine(stagingRoot, "seed-feed"));
             await CopyValidatedConfigurationAsync(
                 configSourceDirectory,

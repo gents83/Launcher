@@ -97,14 +97,30 @@ public sealed class UpdateEndToEndTests : IDisposable
     public async Task First_launch_seeds_from_Perforce_then_promotes_a_newer_remote_version()
     {
         var perforceRoot = Path.Combine(_root, "perforce-launcher");
-        var seedFeedRoot = Path.Combine(perforceRoot, "seed-feed");
-        var configIndexPath = Path.Combine(perforceRoot, "projects.json");
+        var bootstrapperDirectory = Path.Combine(perforceRoot, "deps");
         var remoteFeedRoot = Path.Combine(_root, "nas-feed");
         var coldLocalAppDataRoot = Path.Combine(_root, "cold-local-app-data");
         var deploymentId = "hurricane";
         var installRoot = Path.Combine(coldLocalAppDataRoot, "ProjectLauncher", "deployments", deploymentId);
-        Directory.CreateDirectory(perforceRoot);
-        File.WriteAllText(configIndexPath, "{}");
+        Directory.CreateDirectory(bootstrapperDirectory);
+        File.WriteAllText(Path.Combine(perforceRoot, "projects.json"), "{}");
+        File.WriteAllText(
+            Path.Combine(perforceRoot, "launcher.json"),
+            JsonSerializer.Serialize(new
+            {
+                DeploymentId = deploymentId,
+                ConfigIndex = "projects.json",
+                UpdateSource = new
+                {
+                    Provider = "FileShare",
+                    FeedBase = remoteFeedRoot,
+                    Channel = "stable"
+                }
+            }));
+        var deploymentRoot = LauncherDeploymentRootResolver.Resolve(bootstrapperDirectory);
+        var deployment = LauncherDeploymentConfigReader.Read(deploymentRoot);
+        var seedFeedRoot = Path.Combine(deploymentRoot, "seed-feed");
+        var configIndexPath = deployment.ConfigIndexPath;
         CreateFeed(seedFeedRoot, ActiveVersion);
         CreateFeed(remoteFeedRoot, CandidateVersion);
 
@@ -117,7 +133,7 @@ public sealed class UpdateEndToEndTests : IDisposable
             stateStore,
             coordinator,
             launcher,
-            () => new UpdateSourceSettings(UpdateSourceProvider.FileShare, remoteFeedRoot, "stable"),
+            () => deployment.UpdateSource,
             new FakeRunningAppDetector(),
             configIndexPath,
             seedFeedRoot,

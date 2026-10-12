@@ -16,10 +16,12 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        var deploymentRoot = AppContext.BaseDirectory;
         LauncherDeploymentConfig deployment;
         try
         {
-            deployment = LauncherDeploymentConfigReader.Read(AppContext.BaseDirectory);
+            deploymentRoot = LauncherDeploymentRootResolver.Resolve(deploymentRoot);
+            deployment = LauncherDeploymentConfigReader.Read(deploymentRoot);
         }
         catch (Exception exception) when (
             exception is IOException or UnauthorizedAccessException or ArgumentException or InvalidDataException)
@@ -48,7 +50,7 @@ public partial class App : Application
         const string initialVersion = "0.0.0";
         var stateStore = new InstallationStateStore(localAppDataRoot, deployment.DeploymentId);
         var updateCoordinator = new UpdateCoordinator(stateStore, initialVersion);
-        var seedFeedRoot = Path.Combine(AppContext.BaseDirectory, "seed-feed");
+        var seedFeedRoot = Path.Combine(deploymentRoot, "seed-feed");
         var viewModel = new BootstrapperViewModel(
             installRoot,
             initialVersion,

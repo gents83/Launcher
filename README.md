@@ -6,9 +6,9 @@ A .NET 10 WPF desktop launcher with an embedded WebView2 dashboard for project-s
 
 The app runs on Windows x64 and requires the Microsoft Edge WebView2 Evergreen Runtime. Building from source requires the .NET 10 SDK. Published app versions are self-contained for `win-x64`; WebView2 remains a machine prerequisite.
 
-The supported entry point is **`Launcher.Bootstrapper.exe`** in the deployment's synchronized Perforce `Launcher` folder. The bootstrapper reads the adjacent `launcher.json`, checks the configured unsigned NAS/Artifactory feed, and starts the newest healthy app version from `%LOCALAPPDATA%\ProjectLauncher\deployments\<DeploymentId>`. That per-user cache is used for safe staging and rollback; the Perforce folder is not modified. Do not run a versioned `Launcher.App.exe` directly, because that bypasses update checks.
+The supported entry point is **`LAUNCHER.exe`** in the deployment's synchronized Perforce `Launcher` folder. The bootstrapper reads the adjacent `launcher.json`, checks the configured unsigned NAS/Artifactory feed, and starts the newest healthy app version from `%LOCALAPPDATA%\ProjectLauncher\deployments\<DeploymentId>`. That per-user cache is used for safe staging and rollback; the Perforce folder is not modified. Do not run a versioned `Launcher.App.exe` directly, because that bypasses update checks.
 
-After deployment, the Perforce `Launcher` folder contains the complete `perforce-launcher/` payload: `Launcher.Bootstrapper.exe`, `launcher.json`, the unsigned schema-v2 `seed-feed`, the master `projects.json`, only its referenced child project JSON files, and optional `theme.json` beside the index. The generated bundle does not include project executables, artwork, workspace data, or other assets referenced by those JSON files; ensure they are available at their configured paths. `launcher.json` points to the master index using a relative path. The app reads the Perforce-synced files at startup; after syncing config changes, start the launcher again or use **Refresh** to reload them. The launcher never runs `p4 sync`.
+After deployment, the Perforce `Launcher` folder contains the complete `perforce-launcher/` payload: `LAUNCHER.exe`, its bootstrapper runtime files under `deps/`, `launcher.json`, the unsigned schema-v2 `seed-feed`, the master `projects.json`, only its referenced child project JSON files, and optional `theme.json` beside the index. The generated bundle does not include project executables, artwork, workspace data, or other assets referenced by those JSON files; ensure they are available at their configured paths. `launcher.json` points to the master index using a relative path. The app reads the Perforce-synced files at startup; after syncing config changes, start the launcher again or use **Refresh** to reload them. The launcher never runs `p4 sync`.
 
 NAS/Artifactory updates contain app binaries only. Project/theme JSON remains Perforce-owned and is never replaced by an app update. NAS access uses the user's Windows identity. For Artifactory, the feed uses HTTPS and the user's read token must already be in Windows Credential Manager; never put tokens in Perforce. If the update feed is offline, the unsigned Perforce seed or last healthy cached version is used.
 
@@ -45,9 +45,11 @@ Set one `major.minor.patch` value in tracked [`version.txt`](version.txt) (curre
 ```text
 output/release-1.2.3/
   perforce-launcher/  # submit this complete payload into the Perforce Launcher folder
-    Launcher.Bootstrapper.exe
-    ...bootstrapper runtime files...
+    LAUNCHER.exe
     launcher.json
+    deps/
+      Launcher.Bootstrapper.exe
+      ...bootstrapper runtime files...
     seed-feed/stable/latest.json
     seed-feed/stable/packages/Launcher-1.2.3-win-x64.zip
     projects.json     # master config index
@@ -73,7 +75,7 @@ Both feeds contain only `stable/latest.json` and the immutable `stable/packages/
 
 #### Perforce deployment and updates
 
-For a fresh deployment, place and submit the complete generated `perforce-launcher/` folder in the depot's `Launcher` location through the normal Perforce workflow. Separately ensure project executables, artwork, workspace data, and other assets referenced by the included JSON are available at their configured paths; those assets remain outside the release bundle. Copy the contents of `update-bundle/` separately to the NAS feed root or Artifactory repository.
+For a fresh deployment, place and submit the complete generated `perforce-launcher/` folder in the depot's `Launcher` location through the normal Perforce workflow, including the complete `deps/` directory. Separately ensure project executables, artwork, workspace data, and other assets referenced by the included JSON are available at their configured paths; those assets remain outside the release bundle. Copy the contents of `update-bundle/` separately to the NAS feed root or Artifactory repository.
 
 For an existing deployment, compare the generated `perforce-launcher/` payload with the current depot contents and review every generated descriptor/config diff. Preserve locally customized `launcher.json`—especially `DeploymentId`, `ConfigIndex`, and `UpdateSource`—along with `projects.json`, child project JSON, and `theme.json` unless intentionally replacing them. Submit approved descriptor, config, and runtime changes through the usual Perforce review/submit workflow; users continue to receive config changes through normal Perforce sync. App updates remain automatic through the unsigned feed and do not replace Perforce configuration.
 

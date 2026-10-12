@@ -1,6 +1,6 @@
 # Perforce Launcher distribution and unsigned updates
 
-The launcher is a per-user app whose supported entry point is `Launcher.Bootstrapper.exe` in the deployment's synchronized Perforce `Launcher` folder. The bootstrapper reads the adjacent `launcher.json`, checks the configured update feed, then launches the newest healthy app version from the per-user cache. It never modifies the Perforce folder or runs `p4 sync`.
+The launcher is a per-user app whose supported entry point is `LAUNCHER.exe` in the deployment's synchronized Perforce `Launcher` folder. The bootstrapper reads the adjacent `launcher.json`, checks the configured update feed, then launches the newest healthy app version from the per-user cache. It never modifies the Perforce folder or runs `p4 sync`.
 
 **Trust boundary:** Schema-v2 SHA-256 checks package integrity against `latest.json`; it does not authenticate the publisher. The trust model relies on HTTPS transport for Artifactory, Windows identity authentication for NAS, feed write ACLs, and Perforce access control.
 
@@ -13,9 +13,11 @@ A release build produces these two separate payloads:
 ```text
 output/release-<version>/
   perforce-launcher/              # submit this complete payload to the Perforce Launcher folder
-    Launcher.Bootstrapper.exe
-    ...bootstrapper runtime files...
+    LAUNCHER.exe
     launcher.json
+    deps/
+      Launcher.Bootstrapper.exe
+      ...bootstrapper runtime files...
     seed-feed/
       stable/
         latest.json
@@ -54,7 +56,7 @@ Perforce owns `projects.json`, child project JSON, `theme.json`, and configured 
 
 #### Fresh Perforce deployment
 
-Copy and submit the complete generated `perforce-launcher/` folder into the deployment's Perforce `Launcher` folder using the normal reviewed Perforce workflow. Separately make sure all project executables, artwork, workspace data, and other assets referenced by the included JSON are available at their configured paths; they are not included in the release bundle. Copy or publish `update-bundle/` separately to the NAS feed root or Artifactory repository.
+Copy and submit the complete generated `perforce-launcher/` folder into the deployment's Perforce `Launcher` folder using the normal reviewed Perforce workflow, including the entire `deps/` directory. Separately make sure all project executables, artwork, workspace data, and other assets referenced by the included JSON are available at their configured paths; they are not included in the release bundle. Copy or publish `update-bundle/` separately to the NAS feed root or Artifactory repository.
 
 #### Updating an existing deployment
 

@@ -2,6 +2,14 @@
 setlocal
 cd /d "%~dp0"
 
+if exist "%~dp0output" (
+    rmdir /s /q "%~dp0output"
+    if exist "%~dp0output" (
+        echo ERROR: Could not completely remove the output folder.
+        exit /b 1
+    )
+)
+
 set "VERSION_OVERRIDE="
 for %%A in (%*) do if /i "%%~A"=="-Version" set "VERSION_OVERRIDE=1"
 if defined VERSION_OVERRIDE goto invoke_release

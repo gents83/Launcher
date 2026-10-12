@@ -8,6 +8,7 @@ public sealed class ReleaseCommandOptions
             ["package"] = new(["app-publish-directory", "version", "output-directory"]),
             ["perforce-bundle"] = new(
                 [
+                    "shim-publish-directory",
                     "bootstrapper-publish-directory",
                     "feed-directory",
                     "config-source-directory",
