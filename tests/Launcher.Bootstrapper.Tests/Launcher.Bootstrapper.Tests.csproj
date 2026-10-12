@@ -21,6 +21,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Launcher.Bootstrapper\Launcher.Bootstrapper.csproj" />
+    <ProjectReference Include="..\..\src\Launcher.Shim\Launcher.Shim.csproj" />
     <ProjectReference Include="..\..\src\Launcher.Update\Launcher.Update.csproj" />
     <ProjectReference Include="..\Launcher.ProcessFixture\Launcher.ProcessFixture.csproj" />
   </ItemGroup>

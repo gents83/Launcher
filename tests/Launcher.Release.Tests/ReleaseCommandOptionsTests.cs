@@ -45,6 +45,7 @@ public sealed class ReleaseCommandOptionsTests
         var exception = Assert.Throws<ArgumentException>(() => ReleaseCommandOptions.Parse(
         [
             "perforce-bundle",
+            "--shim-publish-directory", "shim",
             "--bootstrapper-publish-directory", "bootstrapper",
             "--feed-directory", "seed-feed",
             "--output-directory", "perforce-launcher",
@@ -64,6 +65,7 @@ public sealed class ReleaseCommandOptionsTests
         var options = ReleaseCommandOptions.Parse(
         [
             "perforce-bundle",
+            "--shim-publish-directory", "shim",
             "--bootstrapper-publish-directory", "bootstrapper",
             "--feed-directory", "seed-feed",
             "--config-source-directory", "repository-root",
@@ -77,6 +79,7 @@ public sealed class ReleaseCommandOptionsTests
 
         Assert.Equal("perforce-bundle", options.Command);
         Assert.Equal("repository-root", options.Require("config-source-directory"));
+        Assert.Equal("shim", options.Require("shim-publish-directory"));
         Assert.Equal("hurricane", options.Require("deployment-id"));
         Assert.Equal("projects.json", options.Require("config-index"));
         Assert.Equal("NAS", options.Require("default-update-provider"));
@@ -88,6 +91,7 @@ public sealed class ReleaseCommandOptionsTests
         Assert.Throws<ArgumentException>(() => ReleaseCommandOptions.Parse(
         [
             "perforce-bundle",
+            "--shim-publish-directory", "shim",
             "--bootstrapper-publish-directory", "bootstrapper",
             "--feed-directory", "seed-feed",
             "--config-source-directory", "repository-root",

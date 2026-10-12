@@ -20,6 +20,7 @@ public static class ReleaseCli
                     var updateSource = ReadDefaultUpdateSource(options)
                         ?? throw new ArgumentException("An update source is required for the Perforce launcher bundle.");
                     var perforceBundlePath = await new PerforceLauncherPackager().CreateAsync(
+                        options.Require("shim-publish-directory"),
                         options.Require("bootstrapper-publish-directory"),
                         options.Require("feed-directory"),
                         options.Require("config-source-directory"),

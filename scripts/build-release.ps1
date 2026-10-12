@@ -108,6 +108,7 @@ try {
     $workRoot = Join-Path $outputRoot ('.launcher-release-staging-' + $buildToken)
     $appPublishDirectory = Join-Path $workRoot 'app'
     $bootstrapperPublishDirectory = Join-Path $workRoot 'bootstrapper'
+    $shimPublishDirectory = Join-Path $workRoot 'shim'
     $feedDirectory = Join-Path $workRoot 'feed'
     $perforceLauncherDirectory = Join-Path $workRoot 'perforce-launcher'
     [IO.Directory]::CreateDirectory($workRoot) | Out-Null
@@ -140,6 +141,12 @@ try {
         throw "Launcher.Bootstrapper publish failed with exit code $LASTEXITCODE."
     }
 
+    Write-Host 'Publishing the single-file launcher shim...'
+    & dotnet publish (Join-Path $sourceRoot 'src\Launcher.Shim\Launcher.Shim.csproj') @publishCommon -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o $shimPublishDirectory
+    if ($LASTEXITCODE -ne 0) {
+        throw "Launcher shim publish failed with exit code $LASTEXITCODE."
+    }
+
     Write-Host 'Smoke-testing the published app in non-executing test mode...'
     & (Join-Path $sourceRoot 'tests\test-csharp-publish.ps1') -OutputPath $appPublishDirectory -ExpectedAssemblyVersion $assemblyVersion
     if ($LASTEXITCODE -ne 0) {
@@ -164,6 +171,7 @@ try {
     $bundleArguments = @(
         'run', '--project', $releaseCliProject, '--configuration', 'Release', '--no-launch-profile', '--',
         'perforce-bundle',
+        '--shim-publish-directory', $shimPublishDirectory,
         '--bootstrapper-publish-directory', $bootstrapperPublishDirectory,
         '--feed-directory', $feedDirectory,
         '--config-source-directory', $sourceRoot,
@@ -177,6 +185,15 @@ try {
     & dotnet @bundleArguments
     if ($LASTEXITCODE -ne 0) {
         throw "Perforce launcher bundle creation failed with exit code $LASTEXITCODE."
+    }
+
+    Write-Host 'Smoke-testing the Perforce launcher shim and bundle layout...'
+    & (Join-Path $sourceRoot 'tests\test-perforce-launcher-publish.ps1') `
+        -ShimPublishDirectory $shimPublishDirectory `
+        -PerforceLauncherDirectory $perforceLauncherDirectory `
+        -FixtureDirectory (Join-Path $sourceRoot 'tests\Launcher.ProcessFixture\bin\Debug\net10.0')
+    if ($LASTEXITCODE -ne 0) {
+        throw "The Perforce launcher publish smoke test failed with exit code $LASTEXITCODE."
     }
 
     $publishedUpdateBundleDirectory = Join-Path $outputRoot 'update-bundle'

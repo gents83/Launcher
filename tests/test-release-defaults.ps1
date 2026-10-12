@@ -177,34 +177,69 @@ try {
     if (-not [IO.File]::Exists($releaseBatchPath)) {
         throw 'The release batch wrapper is missing.'
     }
-    $batchVersionOutputDirectory = Join-Path $testRoot 'batch-version-output'
-    [IO.Directory]::CreateDirectory($batchVersionOutputDirectory) | Out-Null
-    $batchMarkerPath = Join-Path $batchVersionOutputDirectory 'keep.txt'
-    [IO.File]::WriteAllText($batchMarkerPath, 'keep')
+    $batchWorkspace = Join-Path $testRoot 'batch-workspace'
+    $batchScriptsDirectory = Join-Path $batchWorkspace 'scripts'
+    [IO.Directory]::CreateDirectory($batchScriptsDirectory) | Out-Null
+    Copy-Item -LiteralPath $releaseBatchPath -Destination (Join-Path $batchWorkspace 'build-release.bat')
+    [IO.File]::WriteAllText((Join-Path $batchWorkspace 'version.txt'), '9.8.7')
+    $batchStubPath = Join-Path $batchScriptsDirectory 'build-release.ps1'
+    [IO.File]::WriteAllText($batchStubPath, @'
+[CmdletBinding()]
+param(
+    [string]$Version,
+    [string]$UpdateProvider,
+    [string]$UpdateFeedBase,
+    [string]$UpdateChannel,
+    [string]$OutputDirectory
+)
+$workspace = Split-Path -Parent $PSScriptRoot
+if (Test-Path -LiteralPath (Join-Path $workspace 'output')) {
+    throw 'Output directory was not cleared before the release script started.'
+}
+$arguments = @($Version, $UpdateProvider, $UpdateFeedBase, $UpdateChannel, $OutputDirectory) -join '|'
+[IO.File]::WriteAllText((Join-Path $workspace 'arguments.txt'), $arguments)
+'@)
+    $batchTestPath = Join-Path $batchWorkspace 'build-release.bat'
+    $batchOutputDirectory = Join-Path $batchWorkspace 'output'
+    $batchCustomOutputDirectory = Join-Path $testRoot 'batch-custom-output'
+    $batchFeedDirectory = Join-Path $testRoot 'batch-feed'
+    $batchArgumentsPath = Join-Path $batchWorkspace 'arguments.txt'
+    [IO.Directory]::CreateDirectory((Join-Path $batchOutputDirectory 'old-release')) | Out-Null
+    [IO.File]::WriteAllText((Join-Path $batchOutputDirectory 'old-release\keep.txt'), 'old release')
     $previousErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        $batchVersionOutput = & $releaseBatchPath -UpdateProvider 'FileShare' -UpdateFeedBase (Join-Path $testRoot 'batch-feed') -UpdateChannel 'stable' -OutputDirectory $batchVersionOutputDirectory 2>&1
+        $batchVersionOutput = & $batchTestPath -UpdateProvider 'FileShare' -UpdateFeedBase $batchFeedDirectory -UpdateChannel 'stable' -OutputDirectory $batchCustomOutputDirectory 2>&1
         $batchVersionExitCode = $LASTEXITCODE
-        $batchVersionOverrideOutput = & $releaseBatchPath -Version '2.3.4' -UpdateProvider 'FileShare' -UpdateFeedBase (Join-Path $testRoot 'batch-feed') -UpdateChannel 'stable' -OutputDirectory $batchVersionOutputDirectory 2>&1
+        if ($batchVersionExitCode -ne 0) {
+            throw "The isolated release batch failed: $($batchVersionOutput -join ' ')"
+        }
+        $batchVersionArguments = [IO.File]::ReadAllText($batchArgumentsPath)
+        [IO.Directory]::CreateDirectory((Join-Path $batchOutputDirectory 'old-release')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $batchOutputDirectory 'old-release\keep.txt'), 'old release')
+        $batchVersionOverrideOutput = & $batchTestPath -Version '2.3.4' -UpdateProvider 'FileShare' -UpdateFeedBase $batchFeedDirectory -UpdateChannel 'stable' -OutputDirectory $batchCustomOutputDirectory 2>&1
         $batchVersionOverrideExitCode = $LASTEXITCODE
-        $null = & $releaseBatchPath -UnknownReleaseOption 2>&1
+        $batchVersionOverrideArguments = [IO.File]::ReadAllText($batchArgumentsPath)
+        [IO.Directory]::CreateDirectory((Join-Path $batchOutputDirectory 'old-release')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $batchOutputDirectory 'old-release\keep.txt'), 'old release')
+        $null = & $batchTestPath -UnknownReleaseOption 2>&1
         $releaseBatchExitCode = $LASTEXITCODE
     }
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if (($batchVersionExitCode -eq 0) -or
-        (($batchVersionOutput -join [Environment]::NewLine) -notmatch 'Output directory must be empty') -or
-        [IO.File]::ReadAllText($batchMarkerPath) -cne 'keep') {
-        throw 'The batch wrapper must read version.txt and reach output validation without overwriting existing output.'
+    if (($batchVersionExitCode -ne 0) -or
+        (Test-Path -LiteralPath $batchOutputDirectory) -or
+        ($batchVersionArguments -cne "9.8.7|FileShare|$batchFeedDirectory|stable|$batchCustomOutputDirectory")) {
+        throw 'The batch wrapper must clear the complete output tree before invoking the release script and preserve version/argument handling.'
     }
-    if (($batchVersionOverrideExitCode -eq 0) -or
-        (($batchVersionOverrideOutput -join [Environment]::NewLine) -notmatch 'Output directory must be empty')) {
-        throw 'An explicit -Version argument must override version.txt without being duplicated.'
+    if (($batchVersionOverrideExitCode -ne 0) -or
+        (Test-Path -LiteralPath $batchOutputDirectory) -or
+        ($batchVersionOverrideArguments -cne "2.3.4|FileShare|$batchFeedDirectory|stable|$batchCustomOutputDirectory")) {
+        throw 'An explicit -Version argument must override version.txt without being duplicated, after clearing output.'
     }
-    if ($releaseBatchExitCode -eq 0) {
-        throw 'The release batch wrapper did not propagate a PowerShell parameter error.'
+    if (($releaseBatchExitCode -eq 0) -or (Test-Path -LiteralPath $batchOutputDirectory)) {
+        throw 'The release batch wrapper must propagate a PowerShell parameter error after clearing output.'
     }
 
     Write-Host 'Release defaults tests passed.'
