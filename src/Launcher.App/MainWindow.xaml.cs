@@ -41,11 +41,15 @@ public partial class MainWindow : Window
         ConfigIndexPath = settings.ConfigIndexPath;
         WebView2UserDataDirectory = settings.WebView2UserDataDirectory;
         TestMode = testMode;
+        var teaBoxSettingsStore = new TeaBoxProjectSettingsStore(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            new WindowsDpapiPasswordProtector());
         _messageRouter = new LauncherMessageRouter(
             configuration,
             new ProcessLauncher(),
             testMode,
             cancellationToken => LauncherConfigLoader.LoadAsync(ConfigIndexPath, cancellationToken),
+            teaBoxSettingsStore,
             _artworkHostName);
         _artworkRequestHandler = new ArtworkRequestHandler(
             _artworkHostName,

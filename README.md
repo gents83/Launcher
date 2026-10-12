@@ -224,6 +224,21 @@ The launcher finds `.playlist` files in that directory and creates one button pe
 
 `PlaylistImages` is outside the `TeaBox` object. Its keys must exactly match playlist basenames, such as `"0 - Setup"`. Each configured image replaces the playlist number on that tile; if the image is missing, the number remains.
 
+### Configure native TeaBox settings
+
+When a selected project has a configured TeaBox executable, use the gear button beside the project selector to open its TeaBox settings dialog. The dialog edits TeaBox's native settings; it does not start TeaBox or assume every project uses the same TeaBox installation directory.
+
+The launcher reads and updates two native stores:
+
+- The current user's branch settings at `%APPDATA%\Ubisoft\TeaBox\Branches.xml`.
+- The selected project's options at `.teabox\DeployConfig\TeaBoxProperties.xml`, resolved from the directory containing that project's configured TeaBox executable. This location is derived from each project's configured executable, not from a launcher-wide or shared TeaBox install path.
+
+The dialog combines the Perforce server, user, workspace, and workspace root from both stores. If both stores have different values for one of those fields, choose the branch value, project-options value, or enter a custom value. Every conflict must be resolved before saving. Missing stores or project entries are created on the first save. Project folder name and engine folder are stored in the project options file.
+
+Choose an engine-folder role. **Programmer** uses `src\Engine`; **Non-programmer** uses `Engine`. **Custom** lets you enter another engine folder. If no role is saved yet, select a role before saving.
+
+Passwords are never stored in launcher JSON. A saved password is protected with Windows DPAPI for the current Windows user and written to TeaBox's two native settings stores. The dialog displays only a masked saved-password status; it never fills the password back into the form. Keep the current password, choose which store's password to keep if the two differ, or explicitly replace it by entering it again. If saved password data cannot be read, enter a replacement before saving.
+
 ## Artwork and path rules
 
 Local project-file paths—including `Root`, `BackgroundImage`, `PlaylistImages` values, `TeaBox` paths, `Buttons[].Executable`, `Buttons[].WorkingDirectory`, and `Buttons[].Icon`—resolve relative to that project's JSON. The master `Config` path alone resolves relative to `projects.json`. Relative paths are recommended so the workspace can move together; absolute paths are also accepted. Image URLs must be absolute HTTP(S) URLs and are used as-is, including their query strings.

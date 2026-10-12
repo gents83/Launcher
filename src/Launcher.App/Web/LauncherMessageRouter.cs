@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -5,6 +6,7 @@ using Launcher.Core.Artwork;
 using Launcher.Core.Actions;
 using Launcher.Core.Configuration;
 using Launcher.Core.Processes;
+using Launcher.App.Settings;
 
 namespace Launcher.App.Web;
 
@@ -16,12 +18,17 @@ public sealed class LauncherMessageRouter
     {
         MaxDepth = 8,
         PropertyNameCaseInsensitive = false,
-        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
     };
 
-    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+    };
 
     private readonly IProcessLauncher _processLauncher;
+    private readonly ITeaBoxProjectSettingsStore _teaBoxSettingsStore;
     private readonly bool _testMode;
     private readonly Func<CancellationToken, Task<LauncherConfiguration>> _reloadConfiguration;
     private readonly string _artworkHostName;
@@ -33,11 +40,13 @@ public sealed class LauncherMessageRouter
         IProcessLauncher processLauncher,
         bool testMode,
         Func<CancellationToken, Task<LauncherConfiguration>> reloadConfiguration,
+        ITeaBoxProjectSettingsStore teaBoxSettingsStore,
         string? artworkHostName = null)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _processLauncher = processLauncher ?? throw new ArgumentNullException(nameof(processLauncher));
         _reloadConfiguration = reloadConfiguration ?? throw new ArgumentNullException(nameof(reloadConfiguration));
+        _teaBoxSettingsStore = teaBoxSettingsStore ?? throw new ArgumentNullException(nameof(teaBoxSettingsStore));
         _artworkHostName = artworkHostName ?? LauncherHostOrigin.CreateArtworkHost(
             typeof(LauncherMessageRouter).Assembly.GetName().Version
                 ?? throw new InvalidOperationException("The launcher assembly has no version."));
@@ -70,6 +79,8 @@ public sealed class LauncherMessageRouter
                 "catalog" => Success(requestId, CreateCatalogPayload(Configuration)),
                 "launch" => await LaunchAsync(request, requestId, cancellationToken).ConfigureAwait(false),
                 "refresh" => await RefreshAsync(requestId, cancellationToken).ConfigureAwait(false),
+                "teabox-settings-load" => LoadTeaBoxSettings(request, requestId),
+                "teabox-settings-save" => SaveTeaBoxSettings(request, requestId),
                 _ => Failure(requestId, $"Unknown request type: {request.Type}")
             };
         }
@@ -122,6 +133,10 @@ public sealed class LauncherMessageRouter
                 return Failure(requestId, "The message does not contain a valid request.");
             }
 
+            request = request with
+            {
+                HasSettingsProperty = document.RootElement.TryGetProperty("settings", out _)
+            };
             return await HandleAsync(request, cancellationToken).ConfigureAwait(false);
         }
         catch (JsonException)
@@ -146,6 +161,196 @@ public sealed class LauncherMessageRouter
             .LaunchAsync(plan, _testMode, cancellationToken)
             .ConfigureAwait(false);
         return Success(requestId, result);
+    }
+
+    private LauncherResponse LoadTeaBoxSettings(LauncherRequest request, string requestId)
+    {
+        if (request.HasSettingsProperty || request.Settings is not null)
+        {
+            return Failure(requestId, "A TeaBox settings load request must not include settings.");
+        }
+
+        var project = ResolveTeaBoxProject(request.ProjectId, requestId, out var errorResponse);
+        if (project is null)
+            return errorResponse!;
+
+        try
+        {
+            return Success(requestId, _teaBoxSettingsStore.Load(project));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Failure(requestId, "TeaBox settings could not be loaded.");
+        }
+    }
+
+    private LauncherResponse SaveTeaBoxSettings(LauncherRequest request, string requestId)
+    {
+        if (!TryCreateSettingsSaveRequest(request.Settings, out var saveRequest))
+        {
+            return Failure(requestId, "The TeaBox settings save request is malformed.");
+        }
+
+        var project = ResolveTeaBoxProject(request.ProjectId, requestId, out var errorResponse);
+        if (project is null)
+            return errorResponse!;
+
+        TeaBoxProjectSettingsSnapshot currentSnapshot;
+        try
+        {
+            currentSnapshot = _teaBoxSettingsStore.Load(project);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Failure(requestId, "TeaBox settings could not be loaded for saving.");
+        }
+
+        if (!HasValidConflictResolutions(currentSnapshot, saveRequest!))
+        {
+            return Failure(requestId, "Resolve every conflicting TeaBox setting before saving.");
+        }
+
+        try
+        {
+            return Success(requestId, _teaBoxSettingsStore.Save(project, saveRequest!));
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            return Failure(requestId, "TeaBox settings could not be saved.");
+        }
+    }
+
+    private ProjectConfig? ResolveTeaBoxProject(
+        string? projectId,
+        string requestId,
+        out LauncherResponse? errorResponse)
+    {
+        if (string.IsNullOrWhiteSpace(projectId))
+        {
+            errorResponse = Failure(requestId, "A TeaBox settings request requires projectId.");
+            return null;
+        }
+
+        var project = Configuration.Projects.FirstOrDefault(candidate =>
+            string.Equals(candidate.Id, projectId, StringComparison.OrdinalIgnoreCase));
+        if (project is null)
+        {
+            errorResponse = Failure(requestId, "The requested project is not loaded.");
+            return null;
+        }
+
+        if (!string.IsNullOrWhiteSpace(project.Error))
+        {
+            errorResponse = Failure(requestId, "The selected project configuration is invalid.");
+            return null;
+        }
+
+        if (!CanConfigureTeaBox(project))
+        {
+            errorResponse = Failure(requestId, "The selected project has no resolved TeaBox executable.");
+            return null;
+        }
+
+        errorResponse = null;
+        return project;
+    }
+
+    private static bool TryCreateSettingsSaveRequest(
+        TeaBoxSettingsRequest? settings,
+        out TeaBoxProjectSettingsSaveRequest? saveRequest)
+    {
+        saveRequest = null;
+        if (settings is null || settings.PerforceServer is null || settings.PerforceUserName is null ||
+            settings.PerforceWorkspace is null || settings.WorkspaceRoot is null ||
+            settings.ProjectFolderName is null || string.IsNullOrWhiteSpace(settings.EngineFolder) ||
+            settings.Resolutions is null || settings.PasswordResolution is not { } passwordResolution ||
+            !Enum.IsDefined(passwordResolution) ||
+            (passwordResolution == TeaBoxPasswordResolution.Replace
+                ? string.IsNullOrWhiteSpace(settings.NewPassword)
+                : settings.NewPassword is not null) ||
+            settings.Resolutions.Any(resolution =>
+                resolution is null || resolution.Field is null || resolution.Source is not { } source ||
+                !Enum.IsDefined(source)))
+        {
+            return false;
+        }
+
+        saveRequest = new TeaBoxProjectSettingsSaveRequest(
+            settings.PerforceServer,
+            settings.PerforceUserName,
+            settings.PerforceWorkspace,
+            settings.WorkspaceRoot,
+            settings.ProjectFolderName,
+            settings.EngineFolder,
+            settings.Resolutions
+                .Select(resolution => new TeaBoxFieldResolution(
+                    resolution!.Field!,
+                    resolution.Source!.Value))
+                .ToArray(),
+            passwordResolution,
+            settings.NewPassword);
+        return true;
+    }
+
+    private static bool HasValidConflictResolutions(
+        TeaBoxProjectSettingsSnapshot snapshot,
+        TeaBoxProjectSettingsSaveRequest request)
+    {
+        var conflicts = new Dictionary<string, (string? Branch, string? ProjectOptions, string RequestValue)>(StringComparer.Ordinal);
+        AddConflict(conflicts, "PerforceServer", snapshot.PerforceServer, request.PerforceServer);
+        AddConflict(conflicts, "PerforceUserName", snapshot.PerforceUserName, request.PerforceUserName);
+        AddConflict(conflicts, "PerforceWorkspace", snapshot.PerforceWorkspace, request.PerforceWorkspace);
+        AddConflict(conflicts, "WorkspaceRoot", snapshot.WorkspaceRoot, request.WorkspaceRoot);
+
+        var resolvedFields = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var resolution in request.Resolutions)
+        {
+            if (!conflicts.TryGetValue(resolution.Field, out var conflict) ||
+                !resolvedFields.Add(resolution.Field))
+            {
+                return false;
+            }
+
+            var selectedValue = resolution.Source switch
+            {
+                TeaBoxFieldSource.Branch => conflict.Branch,
+                TeaBoxFieldSource.ProjectOptions => conflict.ProjectOptions,
+                TeaBoxFieldSource.Custom => conflict.RequestValue,
+                _ => null
+            };
+            if (selectedValue is null ||
+                !string.Equals(conflict.RequestValue, selectedValue, StringComparison.Ordinal))
+            {
+                return false;
+            }
+        }
+
+        return resolvedFields.Count == conflicts.Count;
+    }
+
+    private static void AddConflict(
+        IDictionary<string, (string? Branch, string? ProjectOptions, string RequestValue)> conflicts,
+        string fieldName,
+        TeaBoxFieldValue field,
+        string requestValue)
+    {
+        if (field.BranchValue is not null && field.ProjectOptionsValue is not null &&
+            !string.Equals(field.BranchValue, field.ProjectOptionsValue, StringComparison.Ordinal))
+        {
+            conflicts.Add(fieldName, (field.BranchValue, field.ProjectOptionsValue, requestValue));
+        }
     }
 
     private async Task<LauncherResponse> RefreshAsync(
@@ -177,6 +382,7 @@ public sealed class LauncherMessageRouter
                 project.Id,
                 project.Name,
                 project.Error,
+                false,
                 null,
                 Array.Empty<CatalogActionPayload>());
         }
@@ -201,7 +407,13 @@ public sealed class LauncherMessageRouter
                         "action",
                         action.Id)))
                 .ToArray();
-            return new CatalogProjectPayload(project.Id, project.Name, null, backgroundImageUrl, actions);
+            return new CatalogProjectPayload(
+                project.Id,
+                project.Name,
+                null,
+                CanConfigureTeaBox(project),
+                backgroundImageUrl,
+                actions);
         }
         catch (Exception exception)
         {
@@ -209,9 +421,19 @@ public sealed class LauncherMessageRouter
                 project.Id,
                 project.Name,
                 exception.Message,
+                CanConfigureTeaBox(project),
                 null,
                 Array.Empty<CatalogActionPayload>());
         }
+    }
+
+    private static bool CanConfigureTeaBox(ProjectConfig project)
+    {
+        if (!string.IsNullOrWhiteSpace(project.Error))
+            return false;
+
+        var executable = project.TeaBox?.Executable;
+        return !string.IsNullOrWhiteSpace(executable) && Path.IsPathFullyQualified(executable);
     }
 
     private string? CreateArtworkUrl(
@@ -255,6 +477,7 @@ public sealed class LauncherMessageRouter
         string Id,
         string Name,
         string? Error,
+        bool CanConfigureTeaBox,
         string? BackgroundImageUrl,
         IReadOnlyList<CatalogActionPayload> Actions);
 
