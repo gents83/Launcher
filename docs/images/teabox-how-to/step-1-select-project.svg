@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 430" role="img" aria-labelledby="title desc">
+  <title id="title">Step 1: Choose a project and open TeaBox settings</title>
+  <desc id="desc">A launcher mockup highlights the project selector and gear button.</desc>
+  <rect width="900" height="430" rx="20" fill="#0d1117"/>
+  <rect x="18" y="18" width="864" height="394" rx="16" fill="#151a22" stroke="#343c47"/>
+  <text x="54" y="78" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="26" font-weight="700">Project Launcher</text>
+  <text x="54" y="132" fill="#aab2be" font-family="Arial, sans-serif" font-size="16">Project workspace</text>
+  <rect x="54" y="150" width="590" height="66" rx="10" fill="#1b2028" stroke="#343c47" stroke-width="2"/>
+  <text x="78" y="191" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="21">My Project</text>
+  <path d="m610 174 12 12 12-12" fill="none" stroke="#d4d9df" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="668" y="146" width="82" height="74" rx="14" fill="#1b2028" stroke="#9bf00b" stroke-width="4"/>
+  <text x="709" y="195" text-anchor="middle" fill="#9bf00b" font-family="Arial, sans-serif" font-size="35">⚙</text>
+  <path d="M710 228v47h62" fill="none" stroke="#9bf00b" stroke-width="3" stroke-linecap="round"/>
+  <rect x="598" y="276" width="242" height="54" rx="12" fill="#9bf00b"/>
+  <text x="719" y="311" text-anchor="middle" fill="#142000" font-family="Arial, sans-serif" font-size="18" font-weight="700">Click the gear</text>
+  <text x="54" y="320" fill="#aab2be" font-family="Arial, sans-serif" font-size="17">First, choose the project you want to change.</text>
+  <text x="54" y="365" fill="#7f8996" font-family="Arial, sans-serif" font-size="14">Example screen • sample project name</text>
+</svg>

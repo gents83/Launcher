@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 690" role="img" aria-labelledby="title desc">
+  <title id="title">Step 2: Review TeaBox connection and workspace settings</title>
+  <desc id="desc">A settings dialog mockup shows sample connection, workspace, project folder, and engine role fields.</desc>
+  <rect width="900" height="690" rx="20" fill="#0d1117"/>
+  <rect x="35" y="22" width="830" height="646" rx="18" fill="#171c24" stroke="#353d48" stroke-width="2"/>
+  <rect x="35" y="22" width="830" height="8" rx="4" fill="#9bf00b"/>
+  <text x="70" y="74" fill="#9bf00b" font-family="Arial, sans-serif" font-size="14" font-weight="700" letter-spacing="2">TEABOX SETTINGS</text>
+  <text x="70" y="112" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="27" font-weight="700">Configure project</text>
+  <text x="70" y="152" fill="#d5dae1" font-family="Arial, sans-serif" font-size="17" font-weight="700">Perforce connection</text>
+  <text x="70" y="183" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Perforce server</text>
+  <text x="468" y="183" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Perforce user name</text>
+  <rect x="70" y="193" width="370" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <rect x="468" y="193" width="360" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <text x="88" y="224" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">server.example:1666</text>
+  <text x="486" y="224" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">your-name</text>
+  <text x="70" y="272" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Perforce workspace</text>
+  <rect x="70" y="282" width="370" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <text x="88" y="313" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">workspace-name</text>
+  <text x="70" y="363" fill="#d5dae1" font-family="Arial, sans-serif" font-size="17" font-weight="700">Workspace</text>
+  <text x="70" y="393" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Workspace root</text>
+  <rect x="70" y="403" width="370" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <text x="88" y="434" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">C:\YourWorkspace</text>
+  <text x="70" y="486" fill="#d5dae1" font-family="Arial, sans-serif" font-size="17" font-weight="700">UnrealPlugin</text>
+  <text x="70" y="516" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Project folder name</text>
+  <text x="468" y="516" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Engine folder role</text>
+  <rect x="70" y="526" width="370" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <rect x="468" y="526" width="360" height="48" rx="8" fill="#1b2028" stroke="#424b57"/>
+  <text x="88" y="557" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">MyProject</text>
+  <text x="486" y="557" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Programmer</text>
+  <path d="m798 546 10 10 10-10" fill="none" stroke="#d4d9df" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="70" y="614" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">If values differ, choose Branch, Project options, or Custom.</text>
+  <text x="70" y="645" fill="#7f8996" font-family="Arial, sans-serif" font-size="13">Example values only • your screen may look different</text>
+</svg>

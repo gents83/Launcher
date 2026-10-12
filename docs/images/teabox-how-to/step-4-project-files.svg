@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 500" role="img" aria-labelledby="title desc">
+  <title id="title">How the project list points to project settings</title>
+  <desc id="desc">The master projects file points to a separate JSON settings file for each project.</desc>
+  <rect width="960" height="500" rx="20" fill="#0d1117"/>
+  <text x="48" y="55" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="25" font-weight="700">One project, one settings file</text>
+  <rect x="42" y="83" width="392" height="322" rx="16" fill="#171c24" stroke="#9bf00b" stroke-width="3"/>
+  <text x="68" y="123" fill="#9bf00b" font-family="Arial, sans-serif" font-size="16" font-weight="700">projects.json • PROJECT LIST</text>
+  <rect x="68" y="148" width="340" height="54" rx="8" fill="#202731"/>
+  <text x="86" y="181" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">DefaultProject: sample</text>
+  <rect x="68" y="219" width="340" height="150" rx="10" fill="#10151c" stroke="#343c47"/>
+  <text x="88" y="251" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Projects list</text>
+  <text x="88" y="285" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Id: sample</text>
+  <text x="88" y="319" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Config: projects/sample.json</text>
+  <text x="88" y="351" fill="#7f8996" font-family="Arial, sans-serif" font-size="13">Id must be unique</text>
+  <path d="M454 244h46m0 0-13-12m13 12-13 12" fill="none" stroke="#9bf00b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="526" y="83" width="392" height="322" rx="16" fill="#171c24" stroke="#424b57" stroke-width="2"/>
+  <text x="552" y="123" fill="#9bf00b" font-family="Arial, sans-serif" font-size="16" font-weight="700">projects/sample.json</text>
+  <rect x="552" y="148" width="340" height="150" rx="10" fill="#10151c" stroke="#343c47"/>
+  <text x="574" y="184" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Name: Sample Project</text>
+  <text x="574" y="220" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Root: ../work/Sample</text>
+  <text x="574" y="256" fill="#f3f4f1" font-family="Arial, sans-serif" font-size="16">Buttons: [...]</text>
+  <rect x="552" y="318" width="340" height="54" rx="9" fill="#202731"/>
+  <text x="722" y="351" text-anchor="middle" fill="#d5dae1" font-family="Arial, sans-serif" font-size="14">TeaBox gear appears when configured</text>
+  <text x="48" y="452" fill="#aab2be" font-family="Arial, sans-serif" font-size="14">Config paths start from projects.json. Other paths start from the project JSON.</text>
+</svg>
