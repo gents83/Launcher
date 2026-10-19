@@ -6,6 +6,7 @@ using Launcher.Core.Artwork;
 using Launcher.Core.Actions;
 using Launcher.Core.Configuration;
 using Launcher.Core.Processes;
+using Launcher.App.Perforce;
 using Launcher.App.Settings;
 
 namespace Launcher.App.Web;
@@ -29,10 +30,12 @@ public sealed class LauncherMessageRouter
 
     private readonly IProcessLauncher _processLauncher;
     private readonly ITeaBoxProjectSettingsStore _teaBoxSettingsStore;
+    private readonly IPerforceLoginService _perforceLoginService;
     private readonly bool _testMode;
     private readonly Func<CancellationToken, Task<LauncherConfiguration>> _reloadConfiguration;
     private readonly string _artworkHostName;
     private readonly SemaphoreSlim _requestLock = new(1, 1);
+    private readonly SemaphoreSlim _perforceLoginLock = new(1, 1);
     private LauncherConfiguration _configuration;
 
     public LauncherMessageRouter(
@@ -41,12 +44,14 @@ public sealed class LauncherMessageRouter
         bool testMode,
         Func<CancellationToken, Task<LauncherConfiguration>> reloadConfiguration,
         ITeaBoxProjectSettingsStore teaBoxSettingsStore,
+        IPerforceLoginService perforceLoginService,
         string? artworkHostName = null)
     {
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
         _processLauncher = processLauncher ?? throw new ArgumentNullException(nameof(processLauncher));
         _reloadConfiguration = reloadConfiguration ?? throw new ArgumentNullException(nameof(reloadConfiguration));
         _teaBoxSettingsStore = teaBoxSettingsStore ?? throw new ArgumentNullException(nameof(teaBoxSettingsStore));
+        _perforceLoginService = perforceLoginService ?? throw new ArgumentNullException(nameof(perforceLoginService));
         _artworkHostName = artworkHostName ?? LauncherHostOrigin.CreateArtworkHost(
             typeof(LauncherMessageRouter).Assembly.GetName().Version
                 ?? throw new InvalidOperationException("The launcher assembly has no version."));
@@ -69,6 +74,11 @@ public sealed class LauncherMessageRouter
         if (string.IsNullOrWhiteSpace(request.Type))
         {
             return Failure(requestId, "A request type is required.");
+        }
+
+        if (request.Type == "perforce-login")
+        {
+            return await PerforceLoginAsync(request, requestId, cancellationToken).ConfigureAwait(false);
         }
 
         await _requestLock.WaitAsync(cancellationToken).ConfigureAwait(false);
@@ -142,6 +152,71 @@ public sealed class LauncherMessageRouter
         catch (JsonException)
         {
             return Failure(requestId, "The message contains malformed or unsupported JSON.");
+        }
+    }
+
+    private async Task<LauncherResponse> PerforceLoginAsync(
+        LauncherRequest request,
+        string requestId,
+        CancellationToken cancellationToken)
+    {
+        await _perforceLoginLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (request.ActionId is not null || request.HasSettingsProperty || request.Settings is not null)
+            {
+                return Failure(requestId, "A Perforce login request accepts only projectId.");
+            }
+
+            var configuration = Configuration;
+            var project = string.IsNullOrWhiteSpace(request.ProjectId)
+                ? null
+                : configuration.Projects.FirstOrDefault(candidate =>
+                    string.Equals(candidate.Id, request.ProjectId, StringComparison.OrdinalIgnoreCase));
+            if (project is null || !string.IsNullOrWhiteSpace(project.Error) || !CanConfigureTeaBox(project))
+            {
+                return Success(
+                    requestId,
+                    new PerforceLoginResult(false, "Perforce login is not available for this project."));
+            }
+
+            TeaBoxPerforceCredentials credentials;
+            try
+            {
+                credentials = _teaBoxSettingsStore.LoadPerforceCredentials(project);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                return Success(
+                    requestId,
+                    new PerforceLoginResult(false, "Saved Perforce credentials are unavailable."));
+            }
+
+            try
+            {
+                var result = await _perforceLoginService
+                    .LoginAsync(credentials, cancellationToken)
+                    .ConfigureAwait(false);
+                return Success(requestId, result);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                return Success(
+                    requestId,
+                    new PerforceLoginResult(false, "Perforce login failed. Check your credentials and connection."));
+            }
+        }
+        finally
+        {
+            _perforceLoginLock.Release();
         }
     }
 

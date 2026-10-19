@@ -38,3 +38,23 @@ test('masthead is titled Launcher without the LA/ mark', () => {
   assert.doesNotMatch(masthead, /LA\//);
   assert.match(dashboard, /<h2 id="action-heading">Project actions<\/h2>/);
 });
+
+test('footer reserves a bottom-right label for the running launcher version', () => {
+  const footer = dashboard.match(/<footer class="footer">([\s\S]*?)<\/footer>/)?.[1];
+  assert.ok(footer, 'Expected the dashboard footer');
+  assert.match(footer, /ACTIONS ARE PROJECT-SCOPED · LAUNCH ONLY ON BUTTON CLICK/);
+  assert.match(footer, /<span id="launcher-version"><\/span>/);
+  assert.match(cssRule('.footer'), /display:\s*flex/);
+  assert.match(cssRule('.footer'), /justify-content:\s*space-between/);
+});
+
+test('Perforce feedback has its own accessible status region near project selection', () => {
+  const workspace = dashboard.match(/<section class="workspace"[\s\S]*?<\/section>/)?.[0];
+  assert.ok(workspace, 'Expected the project workspace section');
+  assert.match(workspace, /<p id="perforce-login-status" class="notice perforce-status" role="status" aria-live="polite"><\/p>/);
+  assert.match(dashboard, /<p id="launch-status" class="notice" role="status" aria-live="polite"><\/p>/);
+});
+
+test('footer version renderer runs after the dashboard markup is parsed', () => {
+  assert.match(dashboard, /<script src="launcher-version\.js" defer><\/script>/);
+});

@@ -22,6 +22,25 @@ static async Task<int> RunFixtureAsync(string[] arguments)
 
     switch (arguments[0])
     {
+        case "p4-login-fixture":
+            if (arguments.Length < 4)
+            {
+                return 2;
+            }
+
+            var standardInput = await Console.In.ReadToEndAsync();
+            var loginCapture = new
+            {
+                Arguments = arguments.Skip(4).ToArray(),
+                StandardInput = standardInput,
+                ProcessId = Environment.ProcessId
+            };
+            await File.WriteAllTextAsync(arguments[1], JsonSerializer.Serialize(loginCapture));
+            Console.Out.WriteLine("fixture stdout");
+            Console.Error.WriteLine("fixture stderr");
+            await Task.Delay(int.Parse(arguments[3], CultureInfo.InvariantCulture));
+            return int.Parse(arguments[2], CultureInfo.InvariantCulture);
+
         case "capture":
             if (arguments.Length < 4)
             {

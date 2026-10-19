@@ -6,5 +6,7 @@ public interface ITeaBoxProjectSettingsStore
 {
     TeaBoxProjectSettingsSnapshot Load(ProjectConfig project);
 
+    TeaBoxPerforceCredentials LoadPerforceCredentials(ProjectConfig project);
+
     TeaBoxProjectSettingsSnapshot Save(ProjectConfig project, TeaBoxProjectSettingsSaveRequest request);
 }

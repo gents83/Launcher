@@ -29,6 +29,65 @@ public sealed class TeaBoxProjectSettingsStore : ITeaBoxProjectSettingsStore
             return LoadWithoutLock(project);
     }
 
+    public TeaBoxPerforceCredentials LoadPerforceCredentials(ProjectConfig project)
+    {
+        lock (mySettingsLock)
+        {
+            ArgumentNullException.ThrowIfNull(project);
+            if (!string.IsNullOrWhiteSpace(project.Error))
+                throw new InvalidDataException("The selected project configuration is invalid.");
+
+            var projectRoot = ResolveProjectRoot(project.Root);
+            var projectName = ResolveProjectName(projectRoot);
+            var teaBoxExecutableDirectory = ResolveTeaBoxExecutableDirectory(project.TeaBox);
+            var branchesPath = Path.Combine(myRoamingAppDataRoot, "Ubisoft", "TeaBox", "Branches.xml");
+            var projectPropertiesPath = Path.Combine(
+                teaBoxExecutableDirectory, ".teabox", "DeployConfig", "TeaBoxProperties.xml");
+
+            var branchesDocument = LoadDocumentIfPresent(branchesPath, "branch settings");
+            var propertiesDocument = LoadDocumentIfPresent(projectPropertiesPath, "project options");
+            var branch = FindMatchingBranch(branchesDocument, projectName);
+            var connection = ParseConnection(branch?.SccConnection);
+
+            var server = RequirePerforceConnectionValue(MergeValues(
+                connection?.Server,
+                ReadPropertyValue(propertiesDocument, "P4Options", "Port")));
+            var userName = RequirePerforceConnectionValue(MergeValues(
+                connection?.UserName,
+                ReadPropertyValue(propertiesDocument, "P4Options", "UserName")));
+            var workspace = RequirePerforceConnectionValue(MergeValues(
+                connection?.Workspace,
+                ReadPropertyValue(propertiesDocument, "P4Options", "Client")));
+
+            var branchPassword = branch?.Password;
+            var projectPassword = ReadPropertyValue(propertiesDocument, "P4Options", "Password");
+            var hasBranchPassword = !string.IsNullOrWhiteSpace(branchPassword);
+            var hasProjectPassword = !string.IsNullOrWhiteSpace(projectPassword);
+            if (!hasBranchPassword && !hasProjectPassword)
+                throw new InvalidDataException("A saved TeaBox Perforce password is unavailable.");
+
+            var unprotectedBranchPassword = hasBranchPassword
+                ? UnprotectSavedPerforcePassword(branchPassword!)
+                : null;
+            var unprotectedProjectPassword = hasProjectPassword
+                ? UnprotectSavedPerforcePassword(projectPassword!)
+                : null;
+            if (hasBranchPassword && hasProjectPassword && !string.Equals(
+                unprotectedBranchPassword,
+                unprotectedProjectPassword,
+                StringComparison.Ordinal))
+            {
+                throw new InvalidDataException("The saved TeaBox Perforce passwords conflict.");
+            }
+
+            return new TeaBoxPerforceCredentials(
+                server,
+                userName,
+                workspace,
+                unprotectedBranchPassword ?? unprotectedProjectPassword!);
+        }
+    }
+
     private TeaBoxProjectSettingsSnapshot LoadWithoutLock(ProjectConfig project)
     {
         ArgumentNullException.ThrowIfNull(project);
@@ -279,6 +338,24 @@ public sealed class TeaBoxProjectSettingsStore : ITeaBoxProjectSettingsStore
         {
             throw new InvalidDataException("The selected TeaBox password could not be read.");
         }
+    }
+
+    private string UnprotectSavedPerforcePassword(string protectedPassword)
+    {
+        string password;
+        try
+        {
+            password = myPasswordProtector.Unprotect(protectedPassword);
+        }
+        catch (Exception)
+        {
+            throw new InvalidDataException("The saved TeaBox Perforce password could not be read.");
+        }
+
+        if (string.IsNullOrWhiteSpace(password))
+            throw new InvalidDataException("A saved TeaBox Perforce password is unavailable.");
+
+        return password;
     }
 
     private string ProtectPassword(string plaintext)
@@ -1079,6 +1156,14 @@ public sealed class TeaBoxProjectSettingsStore : ITeaBoxProjectSettingsStore
             return new TeaBoxFieldValue(branchValue, null, null);
 
         return new TeaBoxFieldValue(null, branchValue, projectOptionsValue);
+    }
+
+    private static string RequirePerforceConnectionValue(TeaBoxFieldValue value)
+    {
+        if (value.Value is null || value.BranchValue is not null || value.ProjectOptionsValue is not null)
+            throw new InvalidDataException("The TeaBox Perforce connection settings are incomplete or conflicting.");
+
+        return value.Value;
     }
 
     private static string NormalizeEngineFolder(string? engineFolder)

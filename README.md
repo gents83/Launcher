@@ -42,7 +42,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Version 1.0
 
 Release bundle generation must run on Windows for WPF `win-x64` publishing and handle-bound configuration validation.
 
-Set one `major.minor.patch` value in tracked [`version.txt`](version.txt) (currently `1.0.0`), bump it for the next release, then run `build-release.bat`. One invocation creates a folder to merge into the Perforce Launcher folder and an unsigned schema-v2 app-update feed. `-Version` may be passed to override the file for a one-off build. Unless `-OutputDirectory` is supplied, output goes to `output\release-<version>`:
+Set one `major.minor.patch` value in tracked [`version.txt`](version.txt) (currently `1.0.6`), bump it for the next release, then run `build-release.bat`. One invocation creates a folder to merge into the Perforce Launcher folder and an unsigned schema-v2 app-update feed. `-Version` may be passed to override the file for a one-off build. Unless `-OutputDirectory` is supplied, output goes to `output\release-<version>`:
 
 ```text
 output/release-1.2.3/
@@ -240,6 +240,12 @@ The dialog combines the Perforce server, user, workspace, and workspace root fro
 Choose an engine-folder role. **Programmer** uses `src\Engine`; **Non-programmer** uses `Engine`. **Custom** lets you enter another engine folder. If no role is saved yet, select a role before saving.
 
 Passwords are never stored in launcher JSON. A saved password is protected with Windows DPAPI for the current Windows user and written to TeaBox's two native settings stores. The dialog displays only a masked saved-password status; it never fills the password back into the form. Keep the current password, choose which store's password to keep if the two differ, or explicitly replace it by entering it again. If saved password data cannot be read, enter a replacement before saving.
+
+### Automatic Perforce login
+
+The `p4` command-line client must be available on `PATH` in the launcher process environment. When a project is selected, the launcher automatically uses that project's saved TeaBox Perforce credentials to run `p4 login`; the CLI writes its normal Perforce ticket. Login failures appear in the status area without blocking project selection or other launcher actions. The launcher never runs `p4 sync`.
+
+The password remains in the native launcher process and is supplied to `p4` through standard input. It is never sent through the WebView bridge, passed as a command-line argument, or written to logs or status text.
 
 ## Artwork and path rules
 

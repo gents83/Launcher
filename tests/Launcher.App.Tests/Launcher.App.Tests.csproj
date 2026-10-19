@@ -21,6 +21,17 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Launcher.App\Launcher.App.csproj" />
     <ProjectReference Include="..\..\src\Launcher.Core\Launcher.Core.csproj" />
+    <ProjectReference Include="..\Launcher.ProcessFixture\Launcher.ProcessFixture.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <Target Name="CopyProcessFixtureToTestOutput" AfterTargets="Build">
+    <ItemGroup>
+      <ProcessFixtureOutput Include="$(MSBuildThisFileDirectory)..\Launcher.ProcessFixture\bin\$(Configuration)\net10.0\**\*" />
+    </ItemGroup>
+    <Copy
+      SourceFiles="@(ProcessFixtureOutput)"
+      DestinationFiles="@(ProcessFixtureOutput->'$(OutDir)ProcessFixture\%(RecursiveDir)%(Filename)%(Extension)')"
+      SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

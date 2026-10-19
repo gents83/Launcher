@@ -23,6 +23,8 @@
   </script>
   <script src="launcher-bridge.js"></script>
   <script src="teabox-settings.js"></script>
+  <script src="perforce-login.js"></script>
+  <script src="launcher-version.js" defer></script>
   <style>
     :root {
       color-scheme: dark;
@@ -145,6 +147,7 @@
     .playlist-kind { display: block; margin-top: 6px; color: var(--muted); font: 600 9px "Cascadia Code", Consolas, monospace; letter-spacing: .1em; text-transform: uppercase; }
     .notice { min-height: 22px; margin: 20px 0 0; color: var(--muted); font-size: 13px; }
     .notice[data-kind="error"] { color: var(--error); }
+    .perforce-status { min-height: 0; margin: 0; }
     .empty { grid-column: 1 / -1; padding: 24px; border: 1px dashed var(--empty-border); border-radius: 14px; background: var(--empty-background); color: var(--muted); line-height: 1.55; }
     .empty[data-kind="error"] { border-color: var(--error); color: var(--error); }
     .playlist-button:disabled { cursor: progress; opacity: .58; transform: none; }
@@ -160,7 +163,7 @@
     .result-message { margin: 0; color: var(--ink); line-height: 1.55; overflow-wrap: anywhere; }
     .result-close { display: block; min-width: 112px; margin: 24px 0 0 auto; padding: 11px 17px; border: 1px solid var(--rule); border-radius: 10px; background: var(--close-background); color: var(--ink); cursor: pointer; }
     .result-close:hover { border-color: var(--xbox-green); }
-    .footer { margin-top: 44px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--footer-ink); font: 9px "Cascadia Code", Consolas, monospace; letter-spacing: .08em; }
+    .footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 44px; padding-top: 14px; border-top: 1px solid var(--rule); color: var(--footer-ink); font: 9px "Cascadia Code", Consolas, monospace; letter-spacing: .08em; }
     .project-select-row { display: flex; align-items: center; gap: 9px; width: min(100%, 580px); }
     .project-select-row select { flex: 1; min-width: 0; }
     .settings-trigger { display: grid; place-items: center; flex: 0 0 50px; width: 50px; min-height: 50px; padding: 0; border: 1px solid var(--rule); border-radius: 11px; background: var(--field-background); color: var(--muted); cursor: pointer; }
@@ -266,6 +269,7 @@
             </button>
           </div>
           <span id="project-help" class="field-help">Choose a project to see its actions.</span>
+          <p id="perforce-login-status" class="notice perforce-status" role="status" aria-live="polite"></p>
         </div>
         <div class="count" aria-live="polite">
           <span class="count-label">Available actions</span>
@@ -283,7 +287,10 @@
       </section>
     </main>
 
-    <footer class="footer">ACTIONS ARE PROJECT-SCOPED · LAUNCH ONLY ON BUTTON CLICK</footer>
+    <footer class="footer">
+      <span>ACTIONS ARE PROJECT-SCOPED · LAUNCH ONLY ON BUTTON CLICK</span>
+      <span id="launcher-version"></span>
+    </footer>
   </div>
 
   <dialog id="teabox-settings-dialog" class="settings-dialog" aria-labelledby="settings-title" aria-describedby="settings-intro settings-status">
@@ -388,6 +395,7 @@
       const actionGroups = document.getElementById('action-groups');
       const playlistCount = document.getElementById('playlist-count');
       const launchStatus = document.getElementById('launch-status');
+      const perforceLoginStatus = document.getElementById('perforce-login-status');
       const projectBackdrop = document.getElementById('project-backdrop');
       const resultDialog = document.getElementById('result-dialog');
       const resultTitle = document.getElementById('result-title');
@@ -451,10 +459,15 @@
       });
       applyTheme(currentTheme);
 
-      function setStatus(message, kind = '') {
-        launchStatus.textContent = message;
-        launchStatus.dataset.kind = kind;
+      function setStatus(message, kind = '', element = launchStatus) {
+        element.textContent = message;
+        element.dataset.kind = kind;
       }
+
+      const perforceLogin = window.perforceLogin.createPerforceLoginController(
+        window.launcherBridge,
+        (message, kind) => setStatus(message, kind, perforceLoginStatus)
+      );
 
       projectBackdrop.addEventListener('load', () => { projectBackdrop.hidden = false; });
       projectBackdrop.addEventListener('error', () => { projectBackdrop.hidden = true; });
@@ -647,6 +660,7 @@
         projectSelect.value = selectedProjectExists ? preferredProjectId : catalog.defaultProjectId;
         if (!projectSelect.value && catalog.projects.length) projectSelect.selectedIndex = 0;
         renderSelectedProject();
+        perforceLogin.select(catalog.projects.find(project => project.id === projectSelect.value));
         busyGate.syncControls();
       }
 
@@ -673,6 +687,7 @@
       projectSelect.addEventListener('change', () => {
         renderSelectedProject();
         setLaunchControlsDisabled(busyGate.isBusy);
+        perforceLogin.select(catalog?.projects.find(project => project.id === projectSelect.value));
       });
       refreshButton.addEventListener('click', () => loadCatalog(true));
       loadCatalog();

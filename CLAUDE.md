@@ -8,6 +8,11 @@ Project-specific user and deployment documentation lives in [README.md](README.m
 - Keep the native stores synchronized: the current user's `%APPDATA%/Ubisoft/TeaBox/Branches.xml` and the selected project's `.teabox/DeployConfig/TeaBoxProperties.xml`, located relative to that project's configured TeaBox executable. Do not move these settings into launcher JSON or a shared launcher-wide path.
 - Field conflicts require an explicit choice. Passwords must remain protected for the current Windows user and must never be logged or exposed as plain text.
 
+## Automatic Perforce login
+
+- The `p4` CLI must be available on `PATH` in the launcher process environment; login uses the selected project's saved TeaBox Perforce credentials and leaves ticket handling to the CLI. The launcher must never run `p4 sync`.
+- Keep the password native: supply it to `p4` only through standard input. Never send it through the WebView bridge, pass it as an argument, or write it to logs or status text.
+
 ## Verification
 
 - Full suite: `dotnet test Launcher.sln`

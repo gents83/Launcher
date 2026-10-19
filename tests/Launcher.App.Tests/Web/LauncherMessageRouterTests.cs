@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Launcher.App.Perforce;
 using Launcher.App.Settings;
 using Launcher.App.Web;
 using Launcher.Core.Actions;
@@ -383,6 +384,277 @@ public sealed class LauncherMessageRouterTests
     }
 
     [Fact]
+    public async Task Perforce_login_with_real_store_and_no_saved_credentials_returns_safe_failure()
+    {
+        using var directory = new TemporaryDirectory();
+        var projectRoot = directory.Path;
+        var teaBoxExecutablePath = Path.Combine(projectRoot, "teabox.exe");
+        File.WriteAllText(Path.Combine(projectRoot, "Game.uproject"), "{}");
+        File.WriteAllBytes(teaBoxExecutablePath, []);
+        var projectPropertiesDirectory = Path.Combine(projectRoot, ".teabox", "DeployConfig");
+        Directory.CreateDirectory(projectPropertiesDirectory);
+        File.WriteAllText(
+            Path.Combine(projectPropertiesDirectory, "TeaBoxProperties.xml"),
+            "<TeaBoxProperties><Properties /></TeaBoxProperties>");
+        var appDataRoot = Path.Combine(directory.Path, "app-data");
+        var branchesDirectory = Path.Combine(appDataRoot, "Ubisoft", "TeaBox");
+        Directory.CreateDirectory(branchesDirectory);
+        File.WriteAllText(
+            Path.Combine(branchesDirectory, "Branches.xml"),
+            "<TeaBox><BranchOptions /></TeaBox>");
+
+        var project = CreateProject(
+            projectRoot,
+            "project-a",
+            "Project A",
+            executable: teaBoxExecutablePath);
+        var configuration = new LauncherConfiguration
+        {
+            DefaultProjectId = project.Id,
+            Theme = "dark",
+            Projects = [project]
+        };
+        var loginService = new RecordingPerforceLoginService();
+        var router = new LauncherMessageRouter(
+            configuration,
+            new RecordingProcessLauncher(),
+            testMode: true,
+            reloadConfiguration: _ => Task.FromResult(configuration),
+            teaBoxSettingsStore: new TeaBoxProjectSettingsStore(appDataRoot, new IdentityTeaBoxPasswordProtector()),
+            perforceLoginService: loginService);
+
+        var response = await router.HandleMessageAsync(
+            "{\"requestId\":\"perforce-login-no-credentials\",\"type\":\"perforce-login\",\"projectId\":\"project-a\"}");
+
+        Assert.True(response.Success, response.Error);
+        Assert.Equal("perforce-login-no-credentials", response.RequestId);
+        var payload = GetPayload(response);
+        Assert.False(payload.GetProperty("succeeded").GetBoolean());
+        var statusMessage = payload.GetProperty("statusMessage").GetString();
+        Assert.Equal("Saved Perforce credentials are unavailable.", statusMessage);
+        Assert.DoesNotContain(projectRoot, statusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("password", statusMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(0, loginService.LoginCalls);
+    }
+
+    [Fact]
+    public async Task Perforce_login_uses_saved_credentials_and_returns_only_the_safe_result()
+    {
+        using var directory = new TemporaryDirectory();
+        var configuration = CreateConfiguration(directory.Path, includeTeaBox: true);
+        var credentials = new TeaBoxPerforceCredentials(
+            "p4.example:1666",
+            "dev-user",
+            "dev_workspace",
+            "perforce-password-secret");
+        var store = new RecordingTeaBoxProjectSettingsStore { PerforceCredentials = credentials };
+        var loginService = new RecordingPerforceLoginService
+        {
+            Result = new PerforceLoginResult(true, "Perforce login succeeded.")
+        };
+        var router = CreateRouter(
+            configuration,
+            new RecordingProcessLauncher(),
+            settingsStore: store,
+            perforceLoginService: loginService);
+        using var cancellationSource = new CancellationTokenSource();
+
+        var response = await router.HandleAsync(
+            new LauncherRequest("perforce-login-1", "perforce-login", "project-a"),
+            cancellationSource.Token);
+
+        Assert.True(response.Success, response.Error);
+        Assert.Equal("perforce-login-1", response.RequestId);
+        Assert.Equal(1, store.PerforceCredentialsLoadCalls);
+        Assert.Same(configuration.Projects[0], store.PerforceCredentialsProject);
+        Assert.Same(credentials, loginService.LastCredentials);
+        Assert.Equal(cancellationSource.Token, loginService.LastCancellationToken);
+        var payload = GetPayload(response);
+        Assert.True(payload.GetProperty("succeeded").GetBoolean());
+        Assert.Equal("Perforce login succeeded.", payload.GetProperty("statusMessage").GetString());
+        Assert.Equal(
+            new[] { "succeeded", "statusMessage" },
+            payload.EnumerateObject().Select(property => property.Name).ToArray());
+
+        var serializedResponse = JsonSerializer.Serialize(response);
+        Assert.DoesNotContain(credentials.Password, serializedResponse, StringComparison.Ordinal);
+        Assert.DoesNotContain("password", serializedResponse, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("raw-cli-output", serializedResponse, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Perforce_login_rejects_bridge_data_other_than_the_project_id()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new RecordingTeaBoxProjectSettingsStore
+        {
+            PerforceCredentials = new TeaBoxPerforceCredentials("server", "user", "workspace", "saved-secret")
+        };
+        var loginService = new RecordingPerforceLoginService
+        {
+            Result = new PerforceLoginResult(true, "Perforce login succeeded.")
+        };
+        var router = CreateRouter(
+            CreateConfiguration(directory.Path, includeTeaBox: true),
+            new RecordingProcessLauncher(),
+            settingsStore: store,
+            perforceLoginService: loginService);
+
+        var withActionId = await router.HandleMessageAsync(
+            "{\"requestId\":\"perforce-extra-action\",\"type\":\"perforce-login\",\"projectId\":\"project-a\",\"actionId\":\"button:editor\"}");
+        var withSettings = await router.HandleMessageAsync(
+            "{\"requestId\":\"perforce-extra-settings\",\"type\":\"perforce-login\",\"projectId\":\"project-a\",\"settings\":{\"newPassword\":\"bridge-password-secret\"}}");
+
+        Assert.False(withActionId.Success);
+        Assert.False(withSettings.Success);
+        Assert.DoesNotContain("bridge-password-secret", JsonSerializer.Serialize(withSettings), StringComparison.Ordinal);
+        Assert.Equal(0, store.PerforceCredentialsLoadCalls);
+        Assert.Equal(0, loginService.LoginCalls);
+    }
+
+    [Theory]
+    [InlineData("missing-project-id")]
+    [InlineData("unknown-project")]
+    [InlineData("invalid-project")]
+    [InlineData("unsupported-project")]
+    public async Task Perforce_login_returns_a_safe_failure_for_unavailable_projects(string problem)
+    {
+        using var directory = new TemporaryDirectory();
+        var project = problem switch
+        {
+            "invalid-project" => CreateProject(directory.Path, "project-a", "Project A", error: "invalid"),
+            "unsupported-project" => CreateProject(directory.Path, "project-a", "Project A", includeTeaBox: false),
+            _ => CreateProject(directory.Path, "project-a", "Project A")
+        };
+        var configuration = new LauncherConfiguration
+        {
+            DefaultProjectId = "project-a",
+            Theme = "dark",
+            Projects = [project]
+        };
+        var store = new RecordingTeaBoxProjectSettingsStore
+        {
+            PerforceCredentials = new TeaBoxPerforceCredentials("server", "user", "workspace", "secret")
+        };
+        var loginService = new RecordingPerforceLoginService();
+        var router = CreateRouter(
+            configuration,
+            new RecordingProcessLauncher(),
+            settingsStore: store,
+            perforceLoginService: loginService);
+        var projectId = problem switch
+        {
+            "missing-project-id" => null,
+            "unknown-project" => "not-loaded",
+            _ => "project-a"
+        };
+
+        var response = await router.HandleAsync(
+            new LauncherRequest("perforce-login-invalid", "perforce-login", projectId));
+
+        Assert.True(response.Success, response.Error);
+        var payload = GetPayload(response);
+        Assert.False(payload.GetProperty("succeeded").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("statusMessage").GetString()));
+        Assert.Equal(0, store.PerforceCredentialsLoadCalls);
+        Assert.Equal(0, loginService.LoginCalls);
+    }
+
+    [Fact]
+    public async Task Perforce_login_credential_errors_return_safe_unsuccessful_results()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new RecordingTeaBoxProjectSettingsStore
+        {
+            PerforceCredentialsLoadException = new InvalidOperationException(
+                "saved-password-secret and raw-cli-output")
+        };
+        var loginService = new RecordingPerforceLoginService();
+        var router = CreateRouter(
+            CreateConfiguration(directory.Path, includeTeaBox: true),
+            new RecordingProcessLauncher(),
+            settingsStore: store,
+            perforceLoginService: loginService);
+
+        var response = await router.HandleAsync(
+            new LauncherRequest("perforce-login-credentials", "perforce-login", "project-a"));
+
+        Assert.True(response.Success, response.Error);
+        var payload = GetPayload(response);
+        Assert.False(payload.GetProperty("succeeded").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("statusMessage").GetString()));
+        Assert.DoesNotContain("saved-password-secret", payload.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("raw-cli-output", payload.GetRawText(), StringComparison.Ordinal);
+        Assert.Equal(1, store.PerforceCredentialsLoadCalls);
+        Assert.Equal(0, loginService.LoginCalls);
+    }
+
+    [Fact]
+    public async Task Perforce_login_process_errors_return_safe_unsuccessful_results()
+    {
+        using var directory = new TemporaryDirectory();
+        var store = new RecordingTeaBoxProjectSettingsStore
+        {
+            PerforceCredentials = new TeaBoxPerforceCredentials("server", "user", "workspace", "secret")
+        };
+        var loginService = new RecordingPerforceLoginService
+        {
+            LoginException = new InvalidOperationException("raw-cli-output and password-secret")
+        };
+        var router = CreateRouter(
+            CreateConfiguration(directory.Path, includeTeaBox: true),
+            new RecordingProcessLauncher(),
+            settingsStore: store,
+            perforceLoginService: loginService);
+
+        var response = await router.HandleAsync(
+            new LauncherRequest("perforce-login-process", "perforce-login", "project-a"));
+
+        Assert.True(response.Success, response.Error);
+        var payload = GetPayload(response);
+        Assert.False(payload.GetProperty("succeeded").GetBoolean());
+        Assert.False(string.IsNullOrWhiteSpace(payload.GetProperty("statusMessage").GetString()));
+        Assert.DoesNotContain("raw-cli-output", payload.GetRawText(), StringComparison.Ordinal);
+        Assert.DoesNotContain("password-secret", payload.GetRawText(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Pending_Perforce_login_does_not_block_launch_requests()
+    {
+        using var directory = new TemporaryDirectory();
+        File.WriteAllBytes(Path.Combine(directory.Path, "teabox.exe"), []);
+        Directory.CreateDirectory(Path.Combine(directory.Path, "playlists"));
+        var loginService = new RecordingPerforceLoginService { BlockLogin = true };
+        var router = CreateRouter(
+            CreateConfiguration(directory.Path, includeTeaBox: true),
+            new RecordingProcessLauncher(),
+            settingsStore: new RecordingTeaBoxProjectSettingsStore
+            {
+                PerforceCredentials = new TeaBoxPerforceCredentials("server", "user", "workspace", "secret")
+            },
+            perforceLoginService: loginService);
+        var loginTask = router.HandleAsync(
+            new LauncherRequest("perforce-login-pending", "perforce-login", "project-a"));
+        await loginService.LoginStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+
+        try
+        {
+            var launchResponse = await router.HandleAsync(
+                    new LauncherRequest("launch-during-login", "launch", "project-a", "button:editor"))
+                .WaitAsync(TimeSpan.FromSeconds(2));
+
+            Assert.True(launchResponse.Success, launchResponse.Error);
+            Assert.False(loginTask.IsCompleted);
+        }
+        finally
+        {
+            loginService.CompleteBlockedLogin();
+        }
+
+        Assert.True((await loginTask).Success);
+    }
+
+    [Fact]
     public async Task Launch_resolves_only_the_requested_project_and_action_ids()
     {
         using var directory = new TemporaryDirectory();
@@ -550,6 +822,23 @@ public sealed class LauncherMessageRouterTests
     }
 
     [Theory]
+    [InlineData("1.0.6+abc123", "1.0.6")]
+    [InlineData("1.0.6-rc.1+abc123", "1.0.6-rc.1")]
+    [InlineData("1.0.6-rc.1", "1.0.6-rc.1")]
+    public void Display_version_removes_only_semver_build_metadata(string informationalVersion, string expected)
+    {
+        Assert.Equal(expected, MainWindow.FormatLauncherVersion(informationalVersion));
+    }
+
+    [Fact]
+    public void Entry_point_includes_the_compact_launcher_version_for_the_dashboard()
+    {
+        var entryPoint = MainWindow.CreateEntryPoint("launcher-v1-0-6-0.local", "1.0.6-rc.1");
+
+        Assert.Equal("https://launcher-v1-0-6-0.local/index.html?launcherVersion=1.0.6-rc.1", entryPoint);
+    }
+
+    [Theory]
     [InlineData("http://launcher-v1-2-3-4.local/")]
     [InlineData("https://launcher-v1-2-3-4.local.attacker.test/")]
     [InlineData("https://attacker.test/")]
@@ -564,13 +853,15 @@ public sealed class LauncherMessageRouterTests
         LauncherConfiguration configuration,
         RecordingProcessLauncher processLauncher,
         Func<CancellationToken, Task<LauncherConfiguration>>? reload = null,
-        RecordingTeaBoxProjectSettingsStore? settingsStore = null) =>
+        RecordingTeaBoxProjectSettingsStore? settingsStore = null,
+        RecordingPerforceLoginService? perforceLoginService = null) =>
         new(
             configuration,
             processLauncher,
             testMode: true,
             reloadConfiguration: reload ?? (_ => Task.FromResult(configuration)),
-            teaBoxSettingsStore: settingsStore ?? new RecordingTeaBoxProjectSettingsStore());
+            teaBoxSettingsStore: settingsStore ?? new RecordingTeaBoxProjectSettingsStore(),
+            perforceLoginService: perforceLoginService ?? new RecordingPerforceLoginService());
 
     private static LauncherConfiguration CreateConfiguration(
         string directory,
@@ -671,6 +962,25 @@ public sealed class LauncherMessageRouterTests
 
         public TeaBoxProjectSettingsSaveRequest? SavedRequest { get; private set; }
 
+        public TeaBoxPerforceCredentials? PerforceCredentials { get; set; }
+
+        public Exception? PerforceCredentialsLoadException { get; set; }
+
+        public int PerforceCredentialsLoadCalls { get; private set; }
+
+        public ProjectConfig? PerforceCredentialsProject { get; private set; }
+
+        public TeaBoxPerforceCredentials LoadPerforceCredentials(ProjectConfig project)
+        {
+            PerforceCredentialsLoadCalls++;
+            PerforceCredentialsProject = project;
+            if (PerforceCredentialsLoadException is not null)
+                throw PerforceCredentialsLoadException;
+
+            return PerforceCredentials
+                ?? throw new InvalidOperationException("Saved Perforce credentials are unavailable.");
+        }
+
         public TeaBoxProjectSettingsSnapshot Load(ProjectConfig project)
         {
             LoadCalls++;
@@ -693,6 +1003,52 @@ public sealed class LauncherMessageRouterTests
 
             return SaveResult ?? Snapshot;
         }
+    }
+
+    private sealed class RecordingPerforceLoginService : IPerforceLoginService
+    {
+        private readonly TaskCompletionSource<PerforceLoginResult> _blockedResult =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public PerforceLoginResult Result { get; set; } = new(false, "Perforce login failed.");
+
+        public Exception? LoginException { get; set; }
+
+        public bool BlockLogin { get; set; }
+
+        public TaskCompletionSource<bool> LoginStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public int LoginCalls { get; private set; }
+
+        public TeaBoxPerforceCredentials? LastCredentials { get; private set; }
+
+        public CancellationToken LastCancellationToken { get; private set; }
+
+        public Task<PerforceLoginResult> LoginAsync(
+            TeaBoxPerforceCredentials credentials,
+            CancellationToken cancellationToken = default)
+        {
+            LoginCalls++;
+            LastCredentials = credentials;
+            LastCancellationToken = cancellationToken;
+            LoginStarted.TrySetResult(true);
+            if (LoginException is not null)
+                throw LoginException;
+
+            return BlockLogin
+                ? _blockedResult.Task.WaitAsync(cancellationToken)
+                : Task.FromResult(Result);
+        }
+
+        public void CompleteBlockedLogin() => _blockedResult.TrySetResult(Result);
+    }
+
+    private sealed class IdentityTeaBoxPasswordProtector : ITeaBoxPasswordProtector
+    {
+        public string Protect(string plaintext) => plaintext;
+
+        public string Unprotect(string protectedValue) => protectedValue;
     }
 
     private sealed class RecordingProcessLauncher : IProcessLauncher

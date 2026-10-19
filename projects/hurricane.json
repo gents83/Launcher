@@ -10,6 +10,14 @@
       "Executable": "../../Engine/Binaries/Win64/UnrealEditor.exe",
       "Arguments": ["--project", "../../project/Hurricane/Hurricane.uproject"],
       "WorkingDirectory": "{ProjectRoot}"
+    },
+    {
+      "Id": "open-perforce",
+      "Label": "Open P4V",
+      "Icon": "https://camo.githubusercontent.com/e5deeeb03bfeba6a4669a690ca5b0822543fc8b1e5c11aab53ed73b214d39096/68747470733a2f2f696d672e696e666f726d65722e636f6d2f69636f6e735f6d61632f706e672f3132382f3433372f3433373435362e706e67",
+      "Executable": "C:\\Program Files\\Perforce\\p4v.exe",
+      "Arguments": [],
+      "WorkingDirectory": "C:\\Program Files\\Perforce\\"
     }
   ],
   "TeaBox": {

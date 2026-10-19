@@ -452,6 +452,144 @@ public sealed class TeaBoxProjectSettingsStoreTests
         Assert.DoesNotContain("synthetic-password", serializedSnapshot, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void LoadPerforceCredentials_returns_plaintext_only_in_native_credentials()
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        const string password = "synthetic-native-perforce-password";
+        var protectedPassword = fixture.PasswordProtector.Protect(password);
+        fixture.WriteBranch(
+            "Game",
+            sccConnection: "p4.example:1666,alice,game_ws",
+            password: protectedPassword);
+        fixture.WriteProjectOptions(
+            ("P4Options.Port", "p4.example:1666"),
+            ("P4Options.UserName", "alice"),
+            ("P4Options.Client", "game_ws"),
+            ("P4Options.Password", protectedPassword));
+
+        var credentials = fixture.Store.LoadPerforceCredentials(fixture.Project);
+        var serializedSnapshot = JsonSerializer.Serialize(fixture.Store.Load(fixture.Project));
+
+        Assert.Equal("p4.example:1666", credentials.PerforceServer);
+        Assert.Equal("alice", credentials.PerforceUserName);
+        Assert.Equal("game_ws", credentials.PerforceWorkspace);
+        Assert.Equal(password, credentials.Password);
+        Assert.DoesNotContain(password, serializedSnapshot, StringComparison.Ordinal);
+        Assert.DoesNotContain(protectedPassword, serializedSnapshot, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("P4Options.Port")]
+    [InlineData("P4Options.UserName")]
+    [InlineData("P4Options.Client")]
+    public void LoadPerforceCredentials_rejects_missing_connection_values_safely(string missingSetting)
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        var settings = new Dictionary<string, string>
+        {
+            ["P4Options.Port"] = "p4.example:1666",
+            ["P4Options.UserName"] = "alice",
+            ["P4Options.Client"] = "game_ws",
+            ["P4Options.Password"] = fixture.PasswordProtector.Protect("synthetic-missing-connection-password")
+        };
+        fixture.WriteProjectOptions(settings
+            .Where(setting => setting.Key != missingSetting)
+            .Select(setting => (setting.Key, (string?)setting.Value))
+            .ToArray());
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => fixture.Store.LoadPerforceCredentials(fixture.Project));
+
+        Assert.Equal("The TeaBox Perforce connection settings are incomplete or conflicting.", exception.Message);
+        Assert.DoesNotContain("synthetic-missing-connection-password", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoadPerforceCredentials_rejects_conflicting_connection_values_safely()
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        const string password = "synthetic-conflicting-connection-password";
+        var protectedPassword = fixture.PasswordProtector.Protect(password);
+        fixture.WriteBranch(
+            "Game",
+            sccConnection: "p4.branch:1666,branch-user,branch-workspace",
+            password: protectedPassword);
+        fixture.WriteProjectOptions(
+            ("P4Options.Port", "p4.options:1666"),
+            ("P4Options.UserName", "options-user"),
+            ("P4Options.Client", "options-workspace"),
+            ("P4Options.Password", protectedPassword));
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => fixture.Store.LoadPerforceCredentials(fixture.Project));
+
+        Assert.Equal("The TeaBox Perforce connection settings are incomplete or conflicting.", exception.Message);
+        Assert.DoesNotContain(password, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoadPerforceCredentials_rejects_a_missing_saved_password_safely()
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        fixture.WriteBranch("Game", sccConnection: "p4.example:1666,alice,game_ws");
+        fixture.WriteProjectOptions(
+            ("P4Options.Port", "p4.example:1666"),
+            ("P4Options.UserName", "alice"),
+            ("P4Options.Client", "game_ws"));
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => fixture.Store.LoadPerforceCredentials(fixture.Project));
+
+        Assert.Equal("A saved TeaBox Perforce password is unavailable.", exception.Message);
+    }
+
+    [Fact]
+    public void LoadPerforceCredentials_rejects_an_unreadable_saved_password_without_exposing_it()
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        const string unreadableProtectedPassword = "synthetic-unreadable-protected-password";
+        fixture.WriteBranch(
+            "Game",
+            sccConnection: "p4.example:1666,alice,game_ws",
+            password: unreadableProtectedPassword);
+        fixture.WriteProjectOptions(
+            ("P4Options.Port", "p4.example:1666"),
+            ("P4Options.UserName", "alice"),
+            ("P4Options.Client", "game_ws"));
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => fixture.Store.LoadPerforceCredentials(fixture.Project));
+
+        Assert.Equal("The saved TeaBox Perforce password could not be read.", exception.Message);
+        Assert.DoesNotContain(unreadableProtectedPassword, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Synthetic fixture password cannot be unprotected", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoadPerforceCredentials_rejects_conflicting_saved_passwords_without_exposing_them()
+    {
+        using var fixture = new TeaBoxSettingsFixture();
+        const string branchPassword = "synthetic-branch-perforce-password";
+        const string optionsPassword = "synthetic-options-perforce-password";
+        fixture.WriteBranch(
+            "Game",
+            sccConnection: "p4.example:1666,alice,game_ws",
+            password: fixture.PasswordProtector.Protect(branchPassword));
+        fixture.WriteProjectOptions(
+            ("P4Options.Port", "p4.example:1666"),
+            ("P4Options.UserName", "alice"),
+            ("P4Options.Client", "game_ws"),
+            ("P4Options.Password", fixture.PasswordProtector.Protect(optionsPassword)));
+
+        var exception = Assert.Throws<InvalidDataException>(
+            () => fixture.Store.LoadPerforceCredentials(fixture.Project));
+
+        Assert.Equal("The saved TeaBox Perforce passwords conflict.", exception.Message);
+        Assert.DoesNotContain(branchPassword, exception.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(optionsPassword, exception.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(",user,workspace")]
     [InlineData("server,,workspace")]

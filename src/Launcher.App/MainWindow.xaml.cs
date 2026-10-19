@@ -1,7 +1,9 @@
 using System.IO;
+using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using System.Windows;
+using Launcher.App.Perforce;
 using Launcher.App.Settings;
 using Launcher.App.Web;
 using Launcher.Core.Configuration;
@@ -33,11 +35,15 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _acknowledgeHealth = acknowledgeHealth;
-        var assemblyVersion = typeof(MainWindow).Assembly.GetName().Version
+        var assembly = typeof(MainWindow).Assembly;
+        var assemblyVersion = assembly.GetName().Version
             ?? throw new InvalidOperationException("The launcher assembly has no version.");
+        var informationalVersion = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+            ?? assemblyVersion.ToString(3);
+        var launcherVersion = FormatLauncherVersion(informationalVersion);
         _virtualHostName = LauncherHostOrigin.Create(assemblyVersion);
         _artworkHostName = LauncherHostOrigin.CreateArtworkHost(assemblyVersion);
-        _entryPoint = $"https://{_virtualHostName}/index.html";
+        _entryPoint = CreateEntryPoint(_virtualHostName, launcherVersion);
         ConfigIndexPath = settings.ConfigIndexPath;
         WebView2UserDataDirectory = settings.WebView2UserDataDirectory;
         TestMode = testMode;
@@ -50,6 +56,7 @@ public partial class MainWindow : Window
             testMode,
             cancellationToken => LauncherConfigLoader.LoadAsync(ConfigIndexPath, cancellationToken),
             teaBoxSettingsStore,
+            new PerforceLoginService(),
             _artworkHostName);
         _artworkRequestHandler = new ArtworkRequestHandler(
             _artworkHostName,
@@ -63,6 +70,22 @@ public partial class MainWindow : Window
     public string WebView2UserDataDirectory { get; }
 
     public bool TestMode { get; }
+
+    internal static string FormatLauncherVersion(string informationalVersion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(informationalVersion);
+        var buildMetadataStart = informationalVersion.IndexOf('+');
+        return buildMetadataStart < 0
+            ? informationalVersion
+            : informationalVersion[..buildMetadataStart];
+    }
+
+    internal static string CreateEntryPoint(string virtualHostName, string launcherVersion)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(virtualHostName);
+        ArgumentException.ThrowIfNullOrWhiteSpace(launcherVersion);
+        return $"https://{virtualHostName}/index.html?launcherVersion={Uri.EscapeDataString(launcherVersion)}";
+    }
 
     internal static bool IsTrustedWebMessageSource(string? source, string expectedHost)
     {
