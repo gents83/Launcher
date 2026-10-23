@@ -8,6 +8,81 @@ const {
   snapshotValueForField
 } = require('../../../src/Launcher.App/wwwroot/teabox-settings.js');
 
+class FakeElement {
+  constructor() {
+    this.children = [];
+    this.dataset = {};
+    this.listeners = new Map();
+  }
+
+  addEventListener(type, listener) {
+    this.listeners.set(type, listener);
+  }
+
+  dispatch(type, event = {}) {
+    return this.listeners.get(type)?.(event);
+  }
+
+  append(...elements) {
+    this.children.push(...elements);
+  }
+
+  appendChild(element) {
+    this.children.push(element);
+  }
+
+  replaceChildren(...elements) {
+    this.children = elements;
+  }
+
+  querySelector(selector) {
+    if (selector === 'option[value="custom"]') return this.customOption;
+    if (selector === 'input[name="settings-password-action"]:checked') {
+      return this.findCheckedInput(this);
+    }
+    return null;
+  }
+
+  findCheckedInput(element) {
+    for (const child of element.children) {
+      if (child.type === 'radio' && child.name === 'settings-password-action' && child.checked) return child;
+      const checkedInput = this.findCheckedInput(child);
+      if (checkedInput) return checkedInput;
+    }
+    return null;
+  }
+
+  setAttribute() {}
+  focus() {}
+  reset() {}
+
+  showModal() {
+    this.open = true;
+  }
+
+  close(returnValue) {
+    this.open = false;
+    this.returnValue = returnValue;
+    this.dispatch('close');
+  }
+}
+
+function createSettingsDialogFixture() {
+  const ids = [
+    'teabox-settings-form', 'teabox-settings-fields', 'settings-project-name',
+    'settings-engine-role', 'settings-engine-folder', 'settings-engine-folder-field',
+    'settings-password-state', 'settings-password-options', 'settings-new-password',
+    'settings-password-input-field', 'settings-status', 'settings-save', 'settings-cancel',
+    'settings-perforce-server', 'settings-perforce-user-name', 'settings-perforce-workspace',
+    'settings-workspace-root', 'settings-project-folder-name',
+    'settings-perforce-server-conflict', 'settings-perforce-user-name-conflict',
+    'settings-perforce-workspace-conflict', 'settings-workspace-root-conflict'
+  ];
+  const elements = Object.fromEntries(ids.map(id => [id, new FakeElement()]));
+  elements['settings-engine-role'].customOption = new FakeElement();
+  return { elements, dialog: new FakeElement() };
+}
+
 const editableFields = {
   perforceServer: 'p4.example:1666',
   perforceUserName: 'fixture-user',
@@ -107,4 +182,66 @@ test('projects nested conflict resolutions to only field and source', () => {
 test('blocks dialog dismissal only while a save is in flight', () => {
   assert.equal(canDismissSettingsDialog(true), false);
   assert.equal(canDismissSettingsDialog(false), true);
+});
+
+test('closes the dialog before notifying that settings were saved', async () => {
+  const previousDocument = global.document;
+  const { elements, dialog } = createSettingsDialogFixture();
+  const snapshot = {
+    projectName: 'Project A',
+    perforceServer: { value: 'p4.example:1666', branchValue: null, projectOptionsValue: null },
+    perforceUserName: { value: 'fixture-user', branchValue: null, projectOptionsValue: null },
+    perforceWorkspace: { value: 'fixture-client', branchValue: null, projectOptionsValue: null },
+    workspaceRoot: { value: 'D:\\workspace', branchValue: null, projectOptionsValue: null },
+    projectFolderName: 'ProjectA',
+    engineFolder: 'Engine',
+    engineFolderRole: 'non-programmer',
+    passwordState: 'saved'
+  };
+  const requests = [];
+  const bridge = {
+    request(type, payload) {
+      requests.push({ type, payload });
+      return Promise.resolve(type === 'perforce-login'
+        ? { succeeded: true, statusMessage: 'Perforce login succeeded.' }
+        : snapshot);
+    }
+  };
+  const login = require('../../../src/Launcher.App/wwwroot/perforce-login.js')
+    .createPerforceLoginController(bridge, () => {});
+  const saveNotifications = [];
+  global.document = {
+    getElementById: id => elements[id],
+    createElement: () => new FakeElement()
+  };
+
+  try {
+    await login.select({ id: 'project-a' });
+    const settingsDialog = require('../../../src/Launcher.App/wwwroot/teabox-settings.js').attachSettingsDialog({
+      button: new FakeElement(),
+      dialog,
+      getSelectedProject: () => ({ id: 'project-a', name: 'Project A', canConfigureTeaBox: true }),
+      bridge,
+      onSaved: projectId => {
+        saveNotifications.push({ projectId, dialogOpen: dialog.open });
+        login.retry(projectId);
+      }
+    });
+
+    await settingsDialog.loadSelectedProject();
+    await elements['teabox-settings-form'].dispatch('submit', { preventDefault() {} });
+
+    assert.equal(dialog.open, false);
+    assert.deepEqual(saveNotifications, [{ projectId: 'project-a', dialogOpen: false }]);
+    assert.deepEqual(requests.map(request => request.type), [
+      'perforce-login',
+      'teabox-settings-load',
+      'teabox-settings-save',
+      'perforce-login'
+    ]);
+    assert.deepEqual(requests.at(-1).payload, { projectId: 'project-a' });
+  } finally {
+    if (previousDocument === undefined) delete global.document;
+    else global.document = previousDocument;
+  }
 });

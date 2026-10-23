@@ -75,6 +75,7 @@
     dialog,
     getSelectedProject,
     onActiveChange = () => {},
+    onSaved = () => {},
     bridge = typeof window !== 'undefined' ? window.launcherBridge : null
   }) {
     const form = document.getElementById('teabox-settings-form');
@@ -354,20 +355,21 @@
       if (!activeProjectId || !snapshot || isSaving || !hasRequiredValues()) return;
 
       const passwordAction = currentPasswordAction();
-      const payload = buildSettingsSavePayload(activeProjectId, readFields(), passwordAction);
+      const projectId = activeProjectId;
+      const payload = buildSettingsSavePayload(projectId, readFields(), passwordAction);
       const generation = requestGeneration;
       isSaving = true;
       updateSaveButton();
       updateDismissControls();
       setStatus('Saving TeaBox settings…');
       try {
-        const saved = await bridge.request('teabox-settings-save', payload);
+        await bridge.request('teabox-settings-save', payload);
         clearPasswordInput();
         isSaving = false;
         updateDismissControls();
         if (!dialog.open || generation !== requestGeneration) return;
-        populate(saved);
-        setStatus('TeaBox settings saved.');
+        dialog.close('saved');
+        onSaved(projectId);
       } catch {
         clearPasswordInput();
         isSaving = false;

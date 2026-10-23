@@ -507,7 +507,8 @@
         onActiveChange: isActive => {
           settingsDialogActive = isActive;
           setLaunchControlsDisabled(busyGate.isBusy);
-        }
+        },
+        onSaved: projectId => perforceLogin.retry(projectId)
       });
 
       resultClose.addEventListener('click', () => resultDialog.close());

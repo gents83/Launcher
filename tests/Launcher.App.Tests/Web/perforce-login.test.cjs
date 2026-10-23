@@ -76,6 +76,25 @@ test('does not authenticate again when the selected project ID is unchanged', ()
   assert.equal(requests.length, 1);
 });
 
+test('retries login for the same project and ignores the earlier response', async () => {
+  const { controller, requests, statuses } = createController();
+
+  const firstLogin = controller.select({ id: 'project-a' });
+  const retry = controller.retry('project-a');
+
+  assert.deepEqual(requests.map(request => request.payload), [
+    { projectId: 'project-a' },
+    { projectId: 'project-a' }
+  ]);
+
+  requests[0].response.resolve({ succeeded: false, statusMessage: 'Stale login failure.' });
+  requests[1].response.resolve({ succeeded: true, statusMessage: 'Retry succeeded.' });
+  await Promise.all([firstLogin, retry]);
+
+  assert.equal(statuses.at(-1).message, 'Retry succeeded.');
+  assert.equal(statuses.at(-1).kind, '');
+});
+
 test('authenticates a refresh fallback selection but not an unchanged selection', () => {
   const { controller, requests } = createController();
 

@@ -7,19 +7,8 @@
       return projectId === selectedProjectId && generation === selectionGeneration;
     }
 
-    function select(project) {
-      const projectId = typeof project?.id === 'string' && project.id.trim()
-        ? project.id
-        : null;
-      if (projectId === selectedProjectId) return Promise.resolve();
-
-      selectedProjectId = projectId;
+    function login(projectId) {
       const generation = ++selectionGeneration;
-      if (!projectId) {
-        setStatus('');
-        return Promise.resolve();
-      }
-
       setStatus('Logging in to Perforce…', '');
       let loginRequest;
       try {
@@ -48,7 +37,28 @@
       });
     }
 
-    return { select };
+    function select(project) {
+      const projectId = typeof project?.id === 'string' && project.id.trim()
+        ? project.id
+        : null;
+      if (projectId === selectedProjectId) return Promise.resolve();
+
+      selectedProjectId = projectId;
+      selectionGeneration++;
+      if (!projectId) {
+        setStatus('');
+        return Promise.resolve();
+      }
+
+      return login(projectId);
+    }
+
+    function retry(projectId = selectedProjectId) {
+      if (!projectId || projectId !== selectedProjectId) return Promise.resolve();
+      return login(projectId);
+    }
+
+    return { select, retry };
   }
 
   if (typeof module === 'object' && module.exports) {
